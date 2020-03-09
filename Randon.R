@@ -86,21 +86,7 @@ fill_lat <- fill_df %>%
   dplyr::mutate(Latitude = dfx$Latitude)
 fill_lat_imp <- missForest::missForest(fill_lat)
 
-# naniar::gg_miss_var(fill_lat, show_pct = TRUE) +
-#   labs(x = "Variáveis", y = "% NA")
-
-
-iris.imp <- missForest(iris.mis)
-iris.imp$ximp
-
-iris.imp$OOBerror 
-# NRMSE é um erro quadrático médio normalizado. 
-#É usado para representar erros derivados da imputação de valores contínuos.
-# O PFC (proporção de classificados falsamente) 
-
-iris.err <- mixError(iris.imp$ximp, iris.mis, iris)
-
-iris.err[1]
+# https://www.analyticsvidhya.com/blog/2016/03/tutorial-powerful-packages-imputing-missing-values/
 paste("Isso sugere que variáveis categóricas são imputadas com", 
       round((iris.err[2])*100),
       "% de erro e variáveis contínuas são imputadas com",
