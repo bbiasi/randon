@@ -33,11 +33,6 @@ dplyr::glimpse(df)
 naniar::gg_miss_var(df, show_pct = TRUE) +
   labs(x = "Variáveis", y = "% NA")
 
-df %>% 
-  ggplot2::ggplot() +
-  geom_point(aes(x = Data, y = Preco, col = Banheiros), alpha = 0.5) +
-  facet_wrap(~Garagem, "free")
-
 # SELECAO INCIAL, TRANSFORMACAO E AJUSTE DE VARIAVEIS
 dfx <- df %>% 
   dplyr::mutate(id = 1:nrow(df), 
@@ -50,27 +45,68 @@ dfx <- df %>%
                 Endereco = stringr::str_trim(Endereco),
                 Endereco = as.factor(Endereco),
                 Tipo = as.factor(Tipo),
-                Metodo = as.factor(Metodo)) %>%
- # dplyr::select(-c(Bairro, Endereco, Tipo, Metodo, Corretor, Distrito, Regiao, CEP)) %>% 
-  dplyr::select(-c(Bairro, Tipo, Metodo, Corretor, Distrito, Regiao, CEP))
+                Metodo = as.factor(Metodo),
+                Latitude = Latitudo,
+                Regiao = as.factor(Regiao),
+                Distrito = as.factor(Distrito),
+                NumImoveis = as.factor(NumImoveis)) %>%
+  dplyr::filter(Regiao | Distrito | NumImoveis != "#N/A") %>% # REMOVENDO ABERRACAO
+  dplyr::mutate(NumImoveis = as.numeric(as.character(NumImoveis))) %>%  
+  tidyr::drop_na(Preco) 
 
-naniar::gg_miss_var(dfx, show_pct = TRUE, ) +
+naniar::gg_miss_var(dfx, show_pct = TRUE) +
   labs(x = "Variáveis", y = "% NA")
 
-# REALIZANDO DUMMIFICACAO
-Bairro <- tibble::as.tibble(dummies::dummy(df$Bairro))
-# Endereco <- dummies::dummy(df$Endereco) # Erro: memória vetorial esgotada (limite atingido?)
-Tipo     <- tibble::as.tibble(dummies::dummy(df$Tipo))
-Metodo   <- tibble::as.tibble(dummies::dummy(df$Metodo))
-Corretor <- tibble::as.tibble(dummies::dummy(df$Corretor))
-Distrito <- tibble::as.tibble(dummies::dummy(df$Distrito))
-Regiao   <- tibble::as.tibble(dummies::dummy(df$Regiao))
-
 # FILL NA ----
+# REALIZANDO DUMMIFICACAO
+{
+  Bairro   <- tibble::as.tibble(dummies::dummy(dfx$Bairro))
+  Tipo     <- tibble::as.tibble(dummies::dummy(dfx$Tipo))
+  Metodo   <- tibble::as.tibble(dummies::dummy(dfx$Metodo))
+  Corretor <- tibble::as.tibble(dummies::dummy(dfx$Corretor))
+  Distrito <- tibble::as.tibble(dummies::dummy(dfx$Distrito))
+  Regiao   <- tibble::as.tibble(dummies::dummy(dfx$Regiao))
+  }
+
 dfx <- dfx %>%
-  dplyr::bind_cols(list(Bairro, Tipo, Metodo, Corretor, Distrito, Regiao)) %>% 
-  tidyr::drop_na(Preco)
+  dplyr::select(-c(Bairro, Tipo, Metodo, Corretor, Distrito, Regiao, CEP, Latitudo)) %>% 
+  dplyr::bind_cols(list(Bairro, Tipo, Metodo, Corretor, Distrito, Regiao))
 remove(Bairro, Distrito, Tipo, Metodo, Corretor, Regiao)
+
+fill_NA <- dfx %>% 
+  dplyr::select(c(Latitude, Longitude, Quartos_aux, Banheiros, 
+                  Garagem, Terreno, AnoConstrucao, AreaConstruida, id))
+
+fill_df <- dfx %>% 
+  dplyr::select(-c(Latitude, Longitude, Quartos_aux, Banheiros, 
+                   Garagem, Terreno, AnoConstrucao, AreaConstruida, id))
+
+# PREENCHENDO NA - LATITUDE
+fill_lat <- fill_df %>% 
+  dplyr::mutate(Latitude = dfx$Latitude)
+fill_lat_imp <- missForest::missForest(fill_lat)
+
+# naniar::gg_miss_var(fill_lat, show_pct = TRUE) +
+#   labs(x = "Variáveis", y = "% NA")
+
+
+iris.imp <- missForest(iris.mis)
+iris.imp$ximp
+
+iris.imp$OOBerror 
+# NRMSE é um erro quadrático médio normalizado. 
+#É usado para representar erros derivados da imputação de valores contínuos.
+# O PFC (proporção de classificados falsamente) 
+
+iris.err <- mixError(iris.imp$ximp, iris.mis, iris)
+
+iris.err[1]
+paste("Isso sugere que variáveis categóricas são imputadas com", 
+      round((iris.err[2])*100),
+      "% de erro e variáveis contínuas são imputadas com",
+      round((iris.err[1])*100),
+      "% de erro.")
+
 
 
 # OBTENDO COTACAO HISTORICA DO DOLAR AUSTRALIANO ----
@@ -89,13 +125,13 @@ quantmod::getSymbols("AUDBRL=x")
 # 
 # m <- leaflet() %>%
 #   addTiles() %>%  #
-#   addMarkers(lng = c(teste$Longitude), lat= c(teste$Latitudo))
+#   addMarkers(lng = c(teste$Longitude), lat= c(teste$Latitude))
 # m
 # remove(m)
 
 # IDW - PRED ----
 teste <- dfx %>% 
-  dplyr::select(Preco, Latitudo, Longitude) %>% 
+  dplyr::select(Preco, Latitude, Longitude) %>% 
   na.omit()
 
 set.seed(1)
@@ -103,12 +139,12 @@ index <- caret::createDataPartition(teste$Preco, p = 0.7, list = FALSE)
 train <- teste[index, ]
 test  <- teste[-index, ]
 
-sp::coordinates(train) <- ~Longitude+Latitudo
+sp::coordinates(train) <- ~Longitude+Latitude
 sp::proj4string(train) <- sp::CRS("+proj=longlat +datum=WGS84")
 
 testx <- test %>% 
   dplyr::select(-Preco)
-sp::coordinates(testx)  <- ~Longitude+Latitudo
+sp::coordinates(testx)  <- ~Longitude+Latitude
 sp::proj4string(testx)  <- sp::CRS("+proj=longlat +datum=WGS84")
 
 oo <- gstat::idw(formula = Preco ~ 1, 
@@ -128,7 +164,7 @@ ggplot2::ggplot(xx) +
 
 # MAPA DE CALOR UTILIZANDO IDW ----
 teste_mapa <- teste
-sp::coordinates(teste_mapa) <- ~Longitude+Latitudo
+sp::coordinates(teste_mapa) <- ~Longitude+Latitude
 sp::proj4string(teste_mapa) <- sp::CRS("+proj=longlat +datum=WGS84")
 
 # CRIANDO GRID P PLOT
