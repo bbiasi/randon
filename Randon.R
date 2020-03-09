@@ -17,12 +17,12 @@ if(!require("pacman")) install.packages("pacman")
 
 pacman::p_load(dplyr, tidyr, naniar, ggplot2, lubridate, stringr, 
                dummies, missForest, tibble, quantmod, caret, Metrics, 
-               reshape2, spacetime)
+               reshape2, spacetime, ggmap)
 
-if(!require("gstat")) install.packages("gstat", dependencies = T) ; library(gstat)
-if(!require("sp")) install.packages("sp", dependencies = T) ; library(sp)
-if(!require("raster")) install.packages("raster", dependencies = T) ; library(raster)
-if(!require("spm")) install.packages("spm", dependencies = c("Imports", "Suggests")) ; library(spm)
+# if(!require("gstat")) install.packages("gstat", dependencies = T) ; library(gstat)
+# if(!require("sp")) install.packages("sp", dependencies = T) ; library(sp)
+# if(!require("raster")) install.packages("raster", dependencies = T) ; library(raster)
+# if(!require("spm")) install.packages("spm", dependencies = c("Imports", "Suggests")) ; library(spm)
 
 
 # ANALISE E AJUSTE DO DATASET ----
@@ -49,10 +49,67 @@ dfx <- df %>%
                 Latitude = Latitudo,
                 Regiao = as.factor(Regiao),
                 Distrito = as.factor(Distrito),
-                NumImoveis = as.factor(NumImoveis)) %>%
-  dplyr::filter(Regiao | Distrito | NumImoveis != "#N/A") %>% # REMOVENDO ABERRACAO
-  dplyr::mutate(NumImoveis = as.numeric(as.character(NumImoveis))) %>%  
+                NumImoveis = as.factor(NumImoveis),
+                Distancia = as.factor(Distancia)) %>%
+  dplyr::filter(Regiao   != "#N/A",
+                Distrito != "#N/A",
+                NumImoveis != "#N/A", 
+                Distancia  != "#N/A") %>% # REMOVENDO ABERRACAO
+  dplyr::mutate(NumImoveis = as.numeric(as.character(NumImoveis)),
+                Distancia = as.numeric(as.character(Distancia)),
+                Latitude = as.numeric(as.character(Latitude)),
+                Longitude = as.numeric(as.character(Longitude))) %>%  
+  dplyr::select(-Latitudo) %>% 
   tidyr::drop_na(Preco) 
+
+# EDA ----
+# DENSIDADE
+# Preco versus Regiao
+dfx %>% 
+  ggplot() +
+  geom_violin(aes(x = Regiao, y = log10(Preco)), draw_quantiles = 0.5) +
+  coord_flip() +
+  theme_bw()
+
+# Preco versus Distrito
+dfx %>% 
+  ggplot() +
+  geom_violin(aes(x = Distrito, y = log10(Preco)), draw_quantiles = 0.5) +
+  coord_flip() +
+  theme_bw()
+
+# Preco versus Distancia, Metodo
+dfx %>% 
+  ggplot() +
+  geom_point(aes(x = log10(Preco), y = log10(Distancia))) +
+  geom_smooth(aes(x = log10(Preco), y = log10(Distancia))) +
+  facet_wrap(~Metodo, scale = "free") +
+  theme_bw()
+
+# Preco versus Distancia, Metodo
+dfx %>% 
+  ggplot() +
+  geom_point(aes(x = log10(Preco), y = log10(Distancia))) +
+  geom_smooth(aes(x = log10(Preco), y = log10(Distancia))) +
+  facet_wrap(~Regiao, scale = "free") +
+  theme_bw()
+
+# Preco versus Metodo
+dfx %>% ggplot() +
+  geom_violin(aes(x = Metodo, y = log10(Preco)), draw_quantiles = 0.5) +
+  coord_flip() +
+  theme_bw()
+
+
+
+
+dft <- dfx %>% 
+  dplyr::filter(Metodo == "PI")
+
+# TERRENO
+land <- dfx %>% 
+  dplyr::filter(Terreno == 0)
+
 
 naniar::gg_miss_var(dfx, show_pct = TRUE) +
   labs(x = "Variáveis", y = "% NA")
@@ -69,7 +126,7 @@ naniar::gg_miss_var(dfx, show_pct = TRUE) +
   }
 
 dfx <- dfx %>%
-  dplyr::select(-c(Bairro, Tipo, Metodo, Corretor, Distrito, Regiao, CEP, Latitudo)) %>% 
+  dplyr::select(-c(Bairro, Tipo, Metodo, Corretor, Distrito, Regiao, CEP)) %>% 
   dplyr::bind_cols(list(Bairro, Tipo, Metodo, Corretor, Distrito, Regiao))
 remove(Bairro, Distrito, Tipo, Metodo, Corretor, Regiao)
 
