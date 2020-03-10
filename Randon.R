@@ -13,17 +13,13 @@ rm(list = ls()); gc()
 df <- read.csv("precos_imoveis.csv", header = TRUE)
 
 # PACOTES REQUERIDOS ----
-if(!require("pacman")) install.packages("pacman")
-
-pacman::p_load(dplyr, tidyr, naniar, ggplot2, lubridate, stringr, 
-               dummies, missForest, tibble, quantmod, caret, Metrics, 
-               reshape2, spacetime, ggmap)
-
-# if(!require("gstat")) install.packages("gstat", dependencies = T) ; library(gstat)
-# if(!require("sp")) install.packages("sp", dependencies = T) ; library(sp)
-# if(!require("raster")) install.packages("raster", dependencies = T) ; library(raster)
-# if(!require("spm")) install.packages("spm", dependencies = c("Imports", "Suggests")) ; library(spm)
-
+{
+  if(!require("pacman")) install.packages("pacman")
+  
+  pacman::p_load(dplyr, tidyr, naniar, ggplot2, lubridate, stringr, 
+                 dummies, missForest, tibble, quantmod, caret, Metrics, 
+                 reshape2, spacetime, ggmap, cowplot, WVPlots, purrr, caretEnsemble)
+  }
 
 # ANALISE E AJUSTE DO DATASET ----
 #ESTRUTURA
@@ -37,6 +33,7 @@ naniar::gg_miss_var(df, show_pct = TRUE) +
 dfx <- df %>% 
   dplyr::mutate(id = 1:nrow(df), 
                 Data = lubridate::parse_date_time(Data, '%d-%m-%Y'),
+                Data = as.Date(Data),
                 Endereco = stringr::str_to_lower(Endereco),
                 Endereco = stringr::str_trim(Endereco),
                 Endereco = stringr::str_replace_all(Endereco, "[:digit:]", ""),
@@ -56,185 +53,399 @@ dfx <- df %>%
                 NumImoveis != "#N/A", 
                 Distancia  != "#N/A") %>% # REMOVENDO ABERRACAO
   dplyr::mutate(NumImoveis = as.numeric(as.character(NumImoveis)),
-                Distancia = as.numeric(as.character(Distancia)),
-                Latitude = as.numeric(as.character(Latitude)),
-                Longitude = as.numeric(as.character(Longitude))) %>%  
+                Distancia  = as.numeric(as.character(Distancia)),
+                Latitude   = as.numeric(as.character(Latitude)),
+                Longitude  = as.numeric(as.character(Longitude))) %>%  
   dplyr::select(-Latitudo) %>% 
   tidyr::drop_na(Preco) 
 
 # EDA ----
 # DENSIDADE
-# Preco versus Regiao
+p <- ggplot(dfx, aes(x = Preco)) + 
+  geom_density(fill = "blue", alpha = 0.2) +
+  geom_vline(aes(xintercept = mean(Preco)),
+              color = "red", linetype = "dashed", size = 1) +
+  ylab("Densidade") + xlab("Preço") +
+  theme_bw()
+
+p_log <- ggplot(dfx, aes(x = log10(Preco))) + 
+  geom_density(fill = "blue", alpha = 0.2) +
+  geom_vline(aes(xintercept = mean(log10(Preco))),
+             color = "red", linetype = "dashed", size = 1) +
+  ylab("Densidade") + xlab("log10(Preço)") +
+  theme_bw()
+cowplot::plot_grid(p, p_log, align = 'hv', nrow = 1)
+
+# PRECO VERSUS REGIAO
 dfx %>% 
   ggplot() +
-  geom_violin(aes(x = Regiao, y = log10(Preco)), draw_quantiles = 0.5) +
+  geom_violin(aes(x = Regiao, y = log10(Preco)), 
+              fill = "blue", alpha = 0.2, draw_quantiles = 0.5) +
   coord_flip() +
   theme_bw()
 
-# Preco versus Distrito
+# PRECO VERSUS DISTRITO
 dfx %>% 
   ggplot() +
-  geom_violin(aes(x = Distrito, y = log10(Preco)), draw_quantiles = 0.5) +
+  geom_violin(aes(x = Distrito, y = log10(Preco)), 
+              fill = "blue", alpha = 0.2, draw_quantiles = 0.5) +
   coord_flip() +
   theme_bw()
 
-# Preco versus Distancia, Metodo
-dfx %>% 
+# PRECO VERSUS DISTANCIA, METODO
+p2 <- dfx %>% 
   ggplot() +
-  geom_point(aes(x = log10(Preco), y = log10(Distancia))) +
-  geom_smooth(aes(x = log10(Preco), y = log10(Distancia))) +
-  facet_wrap(~Metodo, scale = "free") +
+  geom_point(aes( x = log10(Preco), y = (Distancia)),
+             col = "grey", alpha = 0.4) +
+  geom_smooth(aes(x = log10(Preco), y = (Distancia))) +
+  facet_wrap(~Metodo, nrow = 1) +
   theme_bw()
 
-# Preco versus Distancia, Metodo
-dfx %>% 
+p3 <- dfx %>% 
   ggplot() +
-  geom_point(aes(x = log10(Preco), y = log10(Distancia))) +
-  geom_smooth(aes(x = log10(Preco), y = log10(Distancia))) +
-  facet_wrap(~Regiao, scale = "free") +
+  geom_point(aes( x = log10(Preco), y = (Distancia)),
+             col = "grey", alpha = 0.4) +
+  geom_smooth(aes(x = log10(Preco), y = (Distancia))) +
+  facet_wrap(~Metodo, scale = "free", nrow = 1) +
   theme_bw()
+cowplot::plot_grid(p2, p3, align = 'hv', nrow = 2)
 
-# Preco versus Metodo
+# PRECO VERSUS DISTANCIA, REGIAO
+p4 <- dfx %>% 
+  ggplot() +
+  geom_point(aes( x = log10(Preco), y = log10(Distancia)),
+             fill = "blue", alpha = 0.2) +
+  geom_smooth(aes(x = log10(Preco), y = log10(Distancia))) +
+  facet_wrap(~Regiao) +
+  theme_bw()
+p5 <- dfx %>% 
+  ggplot() +
+  geom_point(aes( x = log10(Preco), y = (Distancia)),
+             fill = "blue", alpha = 0.2) +
+  geom_smooth(aes(x = log10(Preco), y = (Distancia))) +
+  facet_wrap(~Regiao) +
+  theme_bw()
+cowplot::plot_grid(p4, p5, align = 'hv', nrow = 2)
+
+# PRECO VERSUS METODO
 dfx %>% ggplot() +
-  geom_violin(aes(x = Metodo, y = log10(Preco)), draw_quantiles = 0.5) +
+  geom_violin(aes(x = Metodo, y = log10(Preco)), 
+              fill = "blue", alpha = 0.2, draw_quantiles = 0.5) +
   coord_flip() +
   theme_bw()
 
+#
+dfx %>% 
+  dplyr::select(Preco, Quartos, Distancia, NumImoveis, Regiao) %>% 
+  PairPlot(c("Preco", "Quartos", "Distancia", "NumImoveis"), 
+           title = "Matriz de dispersão",
+           group_var = "Regiao")
+
+dfx %>% 
+  dplyr::select(Preco, Quartos, Distancia, NumImoveis, Regiao)
+
+
+dfx %>% 
+  dplyr::select(log10(Preco), Quartos, Distancia, NumImoveis, Regiao) %>% 
+  WVPlots::PairPlot(c("Preco", "Quartos", "Distancia", "NumImoveis"), 
+                    title = "Matriz de dispersão",
+                    group_var = "Regiao")
+
+# PLOT DENSIDADE
+# QUARTOS
+p_quart <- ggplot(dfx, aes(x = Quartos)) + 
+  geom_density(fill = "blue", alpha = 0.2) +
+  geom_vline(aes(xintercept = mean(Quartos)),
+             color = "red", linetype = "dashed", size = 1) +
+  ylab("Densidade") + xlab("Quarto") +
+  theme_bw()
+
+p_log_quart <- ggplot(dfx, aes(x = log10(Quartos))) + 
+  geom_density(fill = "blue", alpha = 0.2) +
+  geom_vline(aes(xintercept = mean(log10(Quartos))),
+             color = "red", linetype = "dashed", size = 1) +
+  ylab("Densidade") + xlab("log10(Quarto)") +
+  theme_bw()
+p_quart <- cowplot::plot_grid(p_quart, p_log_quart, align = 'hv', nrow = 1)
+
+# DISTANCIA
+p_dist <- ggplot(dfx, aes(x = Distancia)) + 
+  geom_density(fill = "black", alpha = 0.2) +
+  geom_vline(aes(xintercept = mean(Distancia)),
+             color = "red", linetype = "dashed", size = 1) +
+  ylab("Densidade") + xlab("Distância") +
+  theme_bw()
+
+p_log_dist <- dfx %>% 
+  dplyr::filter(Distancia > 0) %>%
+  ggplot(aes(x = log10(Distancia))) + 
+  geom_density(fill = "black", alpha = 0.2) +
+  geom_vline(aes(xintercept = mean(log10(Distancia))),
+             color = "red", linetype = "dashed", size = 1) +
+  ylab("Densidade") + xlab("log10(Distância > 0)") +
+  theme_bw()
+p_dist <- cowplot::plot_grid(p_dist, p_log_dist, align = 'hv', nrow = 1)
+
+# NUMERO IMOVEIS NO BAIRRO
+p_nimov <- ggplot(dfx, aes(x = NumImoveis)) + 
+  geom_density(fill = "green", alpha = 0.2) +
+  geom_vline(aes(xintercept = mean(NumImoveis)),
+             color = "red", linetype = "dashed", size = 1) +
+  ylab("Densidade") + xlab("NumImoveis") +
+  theme_bw()
+
+p_log_nimov <- dfx %>% 
+  ggplot(aes(x = log10(NumImoveis))) + 
+  geom_density(fill = "green", alpha = 0.2) +
+  geom_vline(aes(xintercept = mean(log10(NumImoveis))),
+             color = "red", linetype = "dashed", size = 1) +
+  ylab("Densidade") + xlab("log10(DNumImoveis)") +
+  theme_bw()
+p_nimov <- cowplot::plot_grid(p_nimov, p_log_nimov, align = 'hv', nrow = 1)
 
 
 
-dft <- dfx %>% 
-  dplyr::filter(Metodo == "PI")
+cowplot::plot_grid(p_quart, NA, p_dist, 
+                   NA, p_nimov, NA, 
+                   align = 'hv', nrow = 2)
 
-# TERRENO
-land <- dfx %>% 
-  dplyr::filter(Terreno == 0)
+# PRECO VERSUS TEMPO
+dfx %>% 
+  ggplot(aes(x = Data, y = Preco)) +
+  geom_point(aes(col = Distancia), alpha = .5) +
+  facet_wrap(~Regiao) +
+  scale_color_gradientn(colours = terrain.colors(10)) +
+  theme_bw()
 
+dfx %>% 
+  ggplot(aes(x = Data, y = log10(Preco))) +
+  geom_point(aes(col = Distancia), alpha = .5) +
+  facet_wrap(~Regiao) +
+  scale_color_gradientn(colours = terrain.colors(10)) +
+  theme_bw()
 
+#
+dfx %>% 
+  ggplot(aes(x = Data, y = Distancia)) +
+  geom_point(aes(col = Preco), alpha = .5) +
+  facet_wrap(~Regiao) +
+  scale_color_gradientn(colours = terrain.colors(10)) +
+  theme_bw()
+
+dfx %>% 
+  ggplot(aes(x = Data, y = Distancia)) +
+  geom_point(aes(col = log10(Preco)), alpha = .5) +
+  facet_wrap(~Regiao) +
+  scale_color_gradientn(colours = terrain.colors(10)) +
+  theme_bw()
+
+#
+dfx %>% 
+  ggplot(aes(x = Data, y = Distancia)) +
+  geom_point(aes(col = Preco), alpha = .5) +
+  scale_color_gradientn(colours = terrain.colors(10)) +
+  theme_bw()
+
+dfx %>% 
+  ggplot(aes(x = Data, y = Distancia)) +
+  geom_point(aes(col = log10(Preco)), alpha = .5) +
+  scale_color_gradientn(colours = terrain.colors(10)) +
+  theme_bw()
+
+#
+dfx %>% 
+  ggplot(aes(x = Distancia, y = Preco)) +
+  geom_point(aes(col = Regiao), alpha = .5) +
+  theme_bw()
+
+dfx %>% 
+  ggplot(aes(x = Distancia, y = log10(Preco))) +
+  geom_point(aes(col = Regiao), alpha = .5) +
+  theme_bw()
+
+# MAPA DE LOCALIZACAO IMOVEIS
+ggmap::qmplot(Longitude, Latitude, data = dfx, 
+              geom = "density2d", size = I(2), alpha = .1) +
+  theme(legend.position = "none")
+
+# NA
 naniar::gg_miss_var(dfx, show_pct = TRUE) +
   labs(x = "Variáveis", y = "% NA")
 
-# FILL NA ----
-# REALIZANDO DUMMIFICACAO
-{
-  Bairro   <- tibble::as.tibble(dummies::dummy(dfx$Bairro))
-  Tipo     <- tibble::as.tibble(dummies::dummy(dfx$Tipo))
-  Metodo   <- tibble::as.tibble(dummies::dummy(dfx$Metodo))
-  Corretor <- tibble::as.tibble(dummies::dummy(dfx$Corretor))
-  Distrito <- tibble::as.tibble(dummies::dummy(dfx$Distrito))
-  Regiao   <- tibble::as.tibble(dummies::dummy(dfx$Regiao))
-  }
-
-dfx <- dfx %>%
-  dplyr::select(-c(Bairro, Tipo, Metodo, Corretor, Distrito, Regiao, CEP)) %>% 
-  dplyr::bind_cols(list(Bairro, Tipo, Metodo, Corretor, Distrito, Regiao))
-remove(Bairro, Distrito, Tipo, Metodo, Corretor, Regiao)
-
-fill_NA <- dfx %>% 
-  dplyr::select(c(Latitude, Longitude, Quartos_aux, Banheiros, 
-                  Garagem, Terreno, AnoConstrucao, AreaConstruida, id))
-
-fill_df <- dfx %>% 
-  dplyr::select(-c(Latitude, Longitude, Quartos_aux, Banheiros, 
-                   Garagem, Terreno, AnoConstrucao, AreaConstruida, id))
-
-# PREENCHENDO NA - LATITUDE
-fill_lat <- fill_df %>% 
-  dplyr::mutate(Latitude = dfx$Latitude)
-fill_lat_imp <- missForest::missForest(fill_lat)
-
-# https://www.analyticsvidhya.com/blog/2016/03/tutorial-powerful-packages-imputing-missing-values/
-paste("Isso sugere que variáveis categóricas são imputadas com", 
-      round((iris.err[2])*100),
-      "% de erro e variáveis contínuas são imputadas com",
-      round((iris.err[1])*100),
-      "% de erro.")
-
-
-
 # OBTENDO COTACAO HISTORICA DO DOLAR AUSTRALIANO ----
 quantmod::getSymbols("AUDBRL=x")
-#
-# colnames(`USDBRL=X`) <- c("x", "xx", "xxx", "fechamento", "xxxx", "xxxxx")
-# dolar <- data.frame(Data = index(`USDBRL=X`), 
-#                     `USDBRL=X`, row.names = NULL)
-# dolar <- dolar %>% 
-#   dplyr::select(Data, fechamento)
 
-# VISUALIZANDO CASAS NO MAPA ----
-# LEAFLET ----
-# install.packages("leaflet", dependencies = T)
-# library(leaflet)
-# 
-# m <- leaflet() %>%
-#   addTiles() %>%  #
-#   addMarkers(lng = c(teste$Longitude), lat= c(teste$Latitude))
-# m
-# remove(m)
-
-# IDW - PRED ----
-teste <- dfx %>% 
-  dplyr::select(Preco, Latitude, Longitude) %>% 
+# AJUSTANDO ARQUIVO
+colnames(`AUDBRL=X`) <- c("x", "xx", "xxx", "fechamento", "xxxx", "xxxxx")
+AUD <- data.frame(Data = index(`AUDBRL=X`),
+                  `AUDBRL=X`, row.names = NULL)
+AUD <- AUD %>%
+  dplyr::select(Data, fechamento) %>% 
   na.omit()
 
-set.seed(1)
-index <- caret::createDataPartition(teste$Preco, p = 0.7, list = FALSE) 
-train <- teste[index, ]
-test  <- teste[-index, ]
+# MERGE DE DF'S
+df_ts <- AUD %>% 
+  dplyr::left_join(dfx, by = "Data") %>% 
+  tidyr::drop_na(Preco)
 
-sp::coordinates(train) <- ~Longitude+Latitude
-sp::proj4string(train) <- sp::CRS("+proj=longlat +datum=WGS84")
+# plot
+p_aud <- df_ts %>% 
+  ggplot(aes(x = Data)) +
+  geom_line(aes(y = fechamento), alpha = .5) +
+  theme_bw()
+  
+p_ts <- df_ts %>% 
+  ggplot(aes(x = Data)) +
+  geom_point(aes(y = Preco, col = Distancia), alpha = .5, show.legend = F) +
+  facet_wrap(~Regiao, ncol = 1) +
+  scale_color_gradientn(colours = terrain.colors(10)) +
+  theme_bw()
 
-testx <- test %>% 
+cowplot::plot_grid(p_aud, p_ts, align = 'hv', 
+                   rel_heights = c(.3, 1), nrow = 2)
+
+#
+p_ts <- df_ts %>% 
+  ggplot(aes(x = Data)) +
+  geom_point(aes(y = log10(Preco), col = Distancia), alpha = .5, show.legend = F) +
+  facet_wrap(~Regiao, ncol = 1) +
+  scale_color_gradientn(colours = terrain.colors(10)) +
+  theme_bw()
+
+cowplot::plot_grid(p_aud, p_ts, align = 'hv', 
+                   rel_heights = c(.3, 1), nrow = 2)
+
+
+# FILL NA ----
+fill_df <- dfx %>% 
+  dplyr::select(-c(Latitude, Longitude, Quartos_aux, Banheiros, 
+                   Garagem, Terreno, AnoConstrucao, AreaConstruida, 
+                   id))
+
+vars <- c("Quartos", 'Tipo', 'Preco', 'Metodo', 'NumImoveis', 
+          'Distrito', "Distancia", 'Regiao') # VARIAVEIS PARA PREDICAO DE OUTRAS - FILL NA
+
+fill <- c("Latitude", "Longitude", "Quartos_aux", 'Banheiros', 
+          'Garagem', 'Terreno', 'AnoConstrucao', 'AreaConstruida')
+
+handling <- function(x) { 
+  
+  fill_aux <- fill_df %>% 
+    dplyr::select(vars) %>% 
+    dplyr::mutate(ext = as.numeric(dfx[,fill[x]])) %>% 
+    dplyr::mutate_if(is.factor, as.numeric) 
+  
+  
+  fill_imp <- missForest::missForest(fill_aux)
+  fill <- fill_imp$ximp
+  
+}
+
+# Extraindo
+k <- 1:8 %>% # 
+  purrr::map(handling)
+
+aux <- k %>% 
+  purrr::map("ext")
+names(aux) <- fill
+
+aux <- aux %>% 
+  tibble::as_tibble()
+
+# Criando banco de dados tratado: 
+fill <- fill_df %>% 
+  dplyr::select(vars) %>% 
+  dplyr::bind_cols(aux)
+
+# CHECK NA
+naniar::gg_miss_var(fill, show_pct = TRUE) +
+  labs(x = "Variáveis", y = "% NA")
+
+{
+  Tipo    <- tibble::as.tibble(dummies::dummy(dfx$Tipo))
+  Metodo  <- tibble::as.tibble(dummies::dummy(dfx$Metodo))
+  Regiao  <- tibble::as.tibble(dummies::dummy(dfx$Regiao))
+  }
+
+df_aux <- dfx %>%
+  dplyr::select(-c(Bairro, Endereco, Corretor, # ALTA QTD DE LVLS
+                   Tipo, Metodo, Distrito, Regiao, 
+                   CEP,  # INCOERENTE PARA MODELGAGEM PREDITIVA
+                   Data, # BAIXA RELEVANCIA 
+                   id,    # INCOERENTE PARA MODELGAGEM PREDITIVA
+                   Latitude, Longitude, Quartos_aux, Banheiros,    # FILL NA
+                   Garagem, Terreno, AnoConstrucao, AreaConstruida # FILL NA
+                   )) %>% 
+  dplyr::bind_cols(list(Tipo, Metodo, Regiao)) %>% 
+  dplyr::mutate(Latitude  = fill$Latitude,
+                Longitude = fill$Longitude,
+                Quartos_aux = fill$Quartos_aux, 
+                Banheiros = fill$Banheiros, 
+                Garagem   = fill$Garagem, 
+                Terreno   = fill$Terreno,
+                AnoConstrucao  = fill$AnoConstrucao, 
+                AreaConstruida = fill$AreaConstruida,
+                Preco = log10(Preco)) # FEATURE ENGINEERING
+
+# CHECK NA
+anyNA(df_aux)
+
+# CHECK ESTRUTURA
+dplyr::glimpse(df_aux)
+
+ggplot(df_aux, aes(x = Preco)) + 
+  geom_density(fill = "blue", alpha = 0.2) +
+  geom_vline(aes(xintercept = mean(Preco)),
+             color = "red", linetype = "dashed", size = 1) +
+  ylab("Densidade") + xlab("log10(Preço)") +
+  theme_bw()
+
+# PREDICAO DE PRECOS ----
+
+X <- df_aux %>% 
   dplyr::select(-Preco)
-sp::coordinates(testx)  <- ~Longitude+Latitude
-sp::proj4string(testx)  <- sp::CRS("+proj=longlat +datum=WGS84")
+y <- df_aux %>% 
+  dplyr::select(Preco)
 
-oo <- gstat::idw(formula = Preco ~ 1, 
-                 locations = train, newdata = testx, 
-                 idp = 2.0 # PADRAO
-                 )
-result <- data.frame(res = oo@data$var1.pred)
+{
+  set.seed (1) 
+  part_index <- caret::createDataPartition(df_aux$Preco, 
+                                           p = 0.75,        
+                                           list = FALSE) 
+  X_train <- X[part_index, ] 
+  X_test  <- X[-part_index,] 
+  y_train <- y[part_index ] 
+  y_test  <- y[-part_index]
+  
+  my_control <- caret::trainControl(method = "cv",
+                                    number = 10,
+                                    savePredictions = "fianl",
+                                    allowParallel   = TRUE)
+}
 
-# METRICAS DE DESEMPENHO E PLOT DO IDW COM APENAS LATITUDE E LONGITUDE
-Metrics::mae(test$Preco,  result$res)
-Metrics::rmse(test$Preco, result$res)
+{
+  set.seed(1)
+  model_list <- caretEnsemble::caretList(X_train,
+                                         y_train,
+                                         trControl = my_control,
+                                         methodList = c("lm", "rf", 
+                                                         "xgbTree", "xgbLinear"),
+                                         tuneList = NULL,
+                                         continue_on_fail = FALSE, 
+                                         preProcess = c("center", "scale", "pca"))
+}
 
-xx <- data.frame(real = test$Preco, 
-                 predito = result$res)
-ggplot2::ggplot(xx) +
-  geom_point(aes(x = real, y = predito), alpha = 0.5)
-
-# MAPA DE CALOR UTILIZANDO IDW ----
-teste_mapa <- teste
-sp::coordinates(teste_mapa) <- ~Longitude+Latitude
-sp::proj4string(teste_mapa) <- sp::CRS("+proj=longlat +datum=WGS84")
-
-# CRIANDO GRID P PLOT
-grd              <- as.data.frame(spsample(teste_mapa, "regular", n = 50000))
-names(grd)       <- c("X", "Y")
-coordinates(grd) <- c("X", "Y")
-gridded(grd)     <- TRUE  
-fullgrid(grd)    <- TRUE  
-
-sp::proj4string(grd) <- sp::proj4string(teste_mapa)
-P.idw <- gstat::idw(Preco ~ 1, teste_mapa, newdata = grd, idp = 2.0)
-r     <- raster::raster(P.idw)
-plot(r)
-
-# RF + IDW - teste ----
-# DEMORA MUITO
-# COMO FUNCIONA O PREIDICT DISTO?
-# rfidwcv1 <- spm::rfidwcv(teste[, c(2, 3)], # LONGLAT
-#                          teste[, c(2, 3)], # VARIAVEIS PREDITORAS
-#                          teste[, 1], # Y,
-#                          ntree = 1000,
-#                          predacc = "ALL")
-# 
-# rfidwcv1
-
-
-
+{
+  set.seed(1)
+  model_spca <- caretEnsemble::caretList(X_train,
+                                         y_train,
+                                         trControl = my_control,
+                                         methodList = c("lm", "rf", 
+                                                        "xgbTree", "xgbLinear"),
+                                         tuneList = NULL,
+                                         continue_on_fail = FALSE, 
+                                         preProcess = c("center", "scale"))
+}
 
 
 
