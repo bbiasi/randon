@@ -134,20 +134,45 @@ length(table(dfx$Endereco))
 length(table(dfx$Corretor))
 length(table(dfx$Bairro))
 
-# AS DEMAIS VARIAVEIS
+
+# AS DEMAIS VARIAVEIS CATEGORICAS
 variaveis <- c("Tipo", "Metodo", "Distrito", "Regiao")
-dfx %>% 
-  dplyr::group_by(Endereco) %>% 
-  tidyr::drop_na(Endereco) %>% 
-  dplyr::summarise(Prec_med   = mean(Preco),
-                   Ban_med    = mean(Banheiros),
-                   Gar_med    = mean(Garagem),
-                   Quart_med  = mean(Quartos),
-                   Dist_med   = mean(Distancia),
-                   Terren_med = mean(Terreno),
-                   NImv_med   = mean(NumImoveis))
 
+df_variaveis <- list()
 
+for (i in 1:length(variaveis)) {
+  
+  df_temp <- dfx %>% 
+    dplyr::group_by(get(paste0(variaveis[i]))) %>% 
+    dplyr::summarise(Prec_med   = mean(Preco,      na.rm = TRUE),
+                     Ban_med    = mean(Banheiros,  na.rm = TRUE),
+                     Gar_med    = mean(Garagem,    na.rm = TRUE),
+                     Quart_med  = mean(Quartos,    na.rm = TRUE),
+                     Dist_med   = mean(Distancia,  na.rm = TRUE),
+                     Terren_med = mean(Terreno,    na.rm = TRUE),
+                     NImv_med   = mean(NumImoveis, na.rm = TRUE))
+  
+  df_temp$Variavel <- paste0(variaveis[i])
+  
+  df_variaveis[[i]] <- df_temp
+
+}
+
+df_variaveis <- dplyr::bind_rows(df_variaveis)
+df_variaveist <- df_variaveis %>%
+  dplyr::rename("Categoria" = 1) %>%
+  reshape2::melt(id.vars = c("Variavel", "Categoria"))
+
+ggplot(df_variaveist, aes(x = variable, y = value)) +
+  geom_jitter(aes(col = Categoria), alpha = 0.3, show.legend = F) +
+  geom_violin(alpha = 0.1, show.legend = F) +
+  facet_grid(variable~Variavel, scale = "free") +
+  theme_bw() + 
+  theme(axis.text.x = element_text(angle = 90))
+
+# AS INFORMACOES DE ESTATISTICA DESCRITIVA DAS VARIAVEIS CATEGORICAS, DE ACORDO
+# COM AS SUAS CATEGORIAS EXISTENTES, PODEM SER  ENCONTRADAS NOS OBJETOS 
+# df_variaveis E df_variaveist.
 
 # DENSIDADE
 p <- ggplot(dfx, aes(x = Preco)) + 
@@ -612,7 +637,8 @@ ggplot(df_aux, aes(x = Preco)) +
   ylab("Densidade") + xlab("log10(Preço)") +
   theme_bw()
 
-# CHECK POSSIVEIS IMOVEIS REPETIDOS
+# CHECK POSSIVEIS IMOVEIS REPETIDOS - DADO O PREENCHIMENTO DAS VARIAVEIS LATI-
+# TUDE E LONGITUDE.
 df_dup <- df %>% 
   dplyr::mutate(id = 1:nrow(df),
                 Preco_orig = Preco,
@@ -638,6 +664,10 @@ df_dup <- df %>%
 table(df_dup$Pres_NA)
 
 # VERIFICACAO DE POSSIVEIS OUTLIERS ----
+# COMO TEMOS DADOS MISTOS, A SOLUCAO ESCOLHIDA PARA VERIFICACAO DE OUTLIERS FOI
+# A REALIZACAO DE AGRUPAMENTO UTILIZANDO UMA DERIVACAO DO KMEANS, E POSTERIOR-
+# MENTE FOI ANALISADO OS CLUSTERS DE ACORDO COM A SUA GEOLOCALIZACAO.
+
 # AJUSTANDO DATAFRAME PARA CLUSTERING
 df_num <- df_aux %>%
   na.omit() %>% 
@@ -778,66 +808,18 @@ df_aux_cluster %>%
   theme_bw()
 
 
-# TESTE - PREDICAO DE PRECOS ----
+# PREDICAO DE PRECOS ----
 df_model <- df_aux %>% 
-  dplyr::mutate_if(is.factor, as.numeric) %>% 
-  dplyr::filter(Latitude != -37.45392 & Longitude != 144.5886)
+  dplyr::mutate_if(is.factor, as.numeric) %>% # AJUSTE PARA EMPREGO DOS MODELOS
+  dplyr::filter(Latitude != -37.45392 & Longitude != 144.5886) # OUTLIERS
 
-{
-  set.seed(1)
-  
-  teste <- df_model[sample(nrow(df_model), nrow(df_model)*0.1), ]
-  }
+# OS MODELOS PREDITIVOS EMPREGADOS SERAO MODELOS BASEADOS EM ARVORES DE DECISAO,
+# DEVIDO A ROBUSTEZ E ALTA CAPACIDADE DE PREDICAO. OS ALGORITMOS TESTADOS SAO: 
+# RANDOM FOREST, 
 
 # SET DE TREINAMENTO E VALIDACAO
-{
-  set.seed (1) 
-  index <- caret::createDataPartition(teste$Preco, p = 0.75, list = FALSE) 
-  
-  train <- teste[index, ]
-  test  <- teste[-index, ]
-  
-  my_control <- caret::trainControl(method = "cv",
-                                    number = 10,
-                                    index  = caret::createFolds(teste$Preco, 5),
-                                    savePredictions = T)
-
-  # MODELOS 
-  model_list <- caretEnsemble::caretList(Preco~.,
-                                         data = train,
-                                         trControl = my_control,
-                                         methodList = c("rf",
-                                                        "xgbTree",
-                                                        "xgbLinear"),
-                                         preProcess = c("center", "scale"),
-                                         importance = TRUE)
-
-}
-
-model_list$rf
-model_list$xgbTree
-model_list$xgbLinear
-
-options(digits = 3)
-mdl_res_RMSE <- data.frame(RF  = min(model_list$rf$results$RMSE),
-                           XGT = min(model_list$xgbTree$results$RMSE),
-                           XGL = min(model_list$xgbLinear$results$RMSE))
-mdl_res_RMSE
-
-resamples <- caret::resamples(model_list)
-dotplot(resamples, metric = "RMSE")
-
-# ANALISE DE PERFORMANCE DO MODELO
-pred <- caretEnsemble::caretEnsemble(model_list)
-caret::postResample(predict(pred, test), 
-                    obs  = test$Preco)
-
-# REDICAO DE PRECOS ----
-df_model <- df_aux %>% 
-  dplyr::mutate_if(is.factor, as.numeric) %>% 
-  dplyr::filter(Latitude != -37.45392 & Longitude != 144.5886)
-
-# SET DE TREINAMENTO E VALIDACAO
+# 75% DOS DADOS SERAO UTILIZADOS NO TREINAMENTO
+# 25% NA FASE DE TESTE
 {
   set.seed (1) 
   index <- caret::createDataPartition(df_model$Preco, 
@@ -875,12 +857,49 @@ mdl_res_RMSE_F
 resamplesF <- caret::resamples(model_listF)
 dotplot(resamplesF, metric = "RMSE")
 
+# PODEMOS VISUALIZAR NO GRAFICO QUE O MODELO BASEADO NO ALGORITMO DE RANDOM 
+# FOREST NOS RETORNA A MELHOR PERFORMANCE.
+
+# COMO ESTAMOS REALIZANDO UMA REGRECAO, Preco E UMA VARIAVEL CONTINUA, NAO TEMOS
+# A MATRIZ DE CONFUSAO, QUE E GERADA EM PROBLEMAS DE CLASIFICACAO.
+
 # ANALISE DE PERFORMANCE DO MODELO
 predF <- caretEnsemble::caretEnsemble(model_listF)
 final_model_stack <- caret::postResample(predict(predF, test), 
                     obs  = test$Preco)
 
 dotplot(final_model_stack, metric = "RMSE")
+
+
+# APESAR DA BOA PERFORMANCE DO MODELO, NAO PODEMOS, AINDA, SACRAMENTAR AS 
+# METRICAS FINAIS DEVIDO A A TRANSFORMACAO log10(). OU SEJA, E NECESSARIO
+# FAZER O PASSO CONTRARIO AO MODELO, O "BACK".
+
+# CONTUDO, PARA O BACK E REMOCAO DE VARIAVEIS, UTILIZAREMOS APENAS O ALGORITMO
+# DE RANDOM FOREST, POIS E ESPERADO QUE O ERRO DOS PROXIMOS MODELOS SIGAM
+# A MESMA TENDENCIA.
+
+# MODELO PREDITIVO FINAL ----
+# UTILIZANDO APENAS O MODELO RANDOM FOREST
+
+{
+  set.seed (1) 
+  index <- caret::createDataPartition(df_model$Preco, p = 0.75, list = FALSE) 
+  
+  train <- teste[index, ]
+  test  <- teste[-index, ]
+  
+  ctrl  <- caret::trainControl(method  = "cv", 
+                               number  = 10,
+                               savePredictions = T,
+                               verboseIter = FALSE)
+  
+  model1_orig_rf <- caret::train(Preco ~ .,
+                                 data   = train,
+                                 method = "rf",
+                                 preProcess = c("scale", "center"),
+                                 trControl  = ctrl)
+}
 
 # CONCLUSAO ----
 
