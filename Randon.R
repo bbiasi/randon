@@ -40,13 +40,28 @@ df <- read.csv("precos_imoveis.csv", header = TRUE)
                  randomForest)
   }
 
+
 # ANALISE E AJUSTE DA ESTRUTURA DO DATASET ----
 # ESTRUTURA DO DATASET, CLASSE DE VARIAVEIS
 dplyr::glimpse(df)
 
+# TEM-SE:
+# 34857 OBSERVACOES - IMOVEIS
+# 21 VARIAVEIS
+
+# AS VARIAVEIS SAO:
+# 08 CATEGORICAS (INCLUINDO O CEP)
+# 12 CONTINUAS
+# 01 DATA DE REFERENCIA - TRANSACAO
+
+
 # VERIFICACAO VISUAL DE VALOR AUSENTES (NA) NO DATASET
 naniar::gg_miss_var(df, show_pct = TRUE) +
   labs(x = "Variáveis", y = "% NA")
+
+# TEM-SE:
+# 09 VARIAVEIS COM NA'S, INCLUINDO A VARIAVEL Preco, QUE SERA NOSSO [f(x)]
+
 
 # - SELECAO INCIAL, TRANSFORMACAO E AJUSTE DE VARIAVEIS -
 # NESTA ETAPA FOI CRIADO UMA COLUNA DE ID PARA CONTROLE DA POSICAO (ROW) DO 
@@ -54,6 +69,7 @@ naniar::gg_miss_var(df, show_pct = TRUE) +
 # NOME DOS LOGRADOUROS DOS IMOVEIS, COMO PROCESSO DE FEATURE ENGINEERING. 
 # TAMBEM FOI REALIADO A ADEQUADAO DAS VARIAVEIS CATEGORICAS (FACTOR), BEM 
 # COMO OUTRAS ACOES, QUE ESTAO COMENTADAS AO LONGO DO CODIGO.
+
 dfx <- df %>% 
   dplyr::mutate(id = 1:nrow(df), 
                 Data = lubridate::parse_date_time(Data, '%d-%m-%Y'), 
@@ -83,15 +99,18 @@ dfx <- df %>%
   dplyr::select(-Latitudo) %>%  # REMOCAO DA VARIAVEL DUPLICADA
   tidyr::drop_na(Preco)         # REMOCAO DE NA'S NA VARIAVEL PRECO
 
+
 # A PRIORI, A UNICA VARIAVEI QUE E POSSIVEL OMITIR OS NA'S E NA VARIAVEL ALVO,
 # QUE SERA O PRECO. AS OUTRAS VARIAVEIS COM NA'S, APESAR DOS ELEVADOS %, COMO 
 # AreaConstruida E AnoConstrucao, TERAO SEUS DADOS FALTANTES PREENCHIDOS, POIS
 # E ESPERADO QUE ESSSAS DUAS VARIAVEIS SEJAM IMPORTANTES PARA A PRECIDAO DE 
 # PRECOS.
 
+
 # CHECK DE NA'S
 naniar::gg_miss_var(dfx, show_pct = TRUE) +
   labs(x = "Variáveis", y = "% NA")
+
 
 # A VARIAVEL Terreno POSSUI ALGUMAS OBSERVACOES QUE CHAMAM ATENCAO. COMO TERRENO
 # IGUAL A 0 (ZERO). CONTUDO ESSA INFORMACAO FOI MANTIDA, TENDO EM VISTA O
@@ -100,6 +119,36 @@ naniar::gg_miss_var(dfx, show_pct = TRUE) +
 
 
 # ANALISE EXPLORATORIA DOS DADOS ----
+# RESUMO GERAL
+dfx %>% 
+  summary()
+
+# VARIAVEL ENDERECO
+# A VARIAVEL ENDERECO, MESMO SENDO REDUZIDA AO NOME DOS LOGRADOUROS, APRESENTA
+# DEMASIADA QUANTIDADE DE LEVELS. LOGO, APESAR DO NIVEL DE DETALHER SER
+# INTERESSANTE, NAO ACRESCENTA TANTA INFORMACAO PARA MODELAGEM PREDITIVA.
+length(table(dfx$Endereco))
+
+# OUTRA VARIAVEL SEMELHANTE A DA FIGURA DO CORRETOR DE IMOVEL (Corretor)
+# E DA QUANTIDA DE BAIRROS 
+length(table(dfx$Corretor))
+length(table(dfx$Bairro))
+
+# AS DEMAIS VARIAVEIS
+variaveis <- c("Tipo", "Metodo", "Distrito", "Regiao")
+dfx %>% 
+  dplyr::group_by(Endereco) %>% 
+  tidyr::drop_na(Endereco) %>% 
+  dplyr::summarise(Prec_med   = mean(Preco),
+                   Ban_med    = mean(Banheiros),
+                   Gar_med    = mean(Garagem),
+                   Quart_med  = mean(Quartos),
+                   Dist_med   = mean(Distancia),
+                   Terren_med = mean(Terreno),
+                   NImv_med   = mean(NumImoveis))
+
+
+
 # DENSIDADE
 p <- ggplot(dfx, aes(x = Preco)) + 
   geom_density(fill = "blue", alpha = 0.2) +
@@ -389,9 +438,9 @@ ggmap::qmplot(Longitude, Latitude, data = dfx,
 # DE PRECO EM PERIODO MAIS RECENTE, FOI BUSCADO VERIFICAR SE HOUVE ALGUMA 
 # INFLUENCIA EXTERNA, COMO O OCORRIDO NOS EUA EM 2008.
 
-# A PARTIR DESTA HIPOTESE, FOI VERIFICADO A COTACAO DO DOLAR AUSTRALIANO EM 
-# EM RELACAO AO REAL BRASILEIRO (POIS O Preco ESTA EM REAIS E OS IMOVEIS EM 
-# ANALISE ESTAO NA AUSTRALIA).
+# A PARTIR DESTA HIPOTESE, MESMO COM O RANGE TEMPORAL PEQUENO, FOI VERIFICADO 
+# A COTACAO DO DOLAR AUSTRALIANO EM EM RELACAO AO REAL BRASILEIRO (POIS O Preco
+# ESTA EM REAIS E OS IMOVEIS EM ANALISE ESTAO NA AUSTRALIA).
 
 # HISTORICO DA COTACAO - TAXA CAMBIAL
 quantmod::getSymbols("AUDBRL=x")
@@ -496,6 +545,9 @@ naniar::gg_miss_var(fill, show_pct = TRUE) +
   labs(x = "Variáveis", y = "% NA")
 
 # DUMMIFICACAO DEVARIAVEIS CATEGORICAS UTLIZANDO A TECNICA DE ONE HOT ENCODING
+# NOTA: AS VARIAVEIS COM ELEVADA QTD DE CATEGORIAS NAO PASSARAM POR ESSE 
+# PROCESSO, POIS IMPLICARIA EM UM NUMERO EXACERBADO DE VARIAVEIS, AUMENTANDO A 
+# COMPLEXIDADE DO PROBLEMA AQUI ABORDADO.
 {
   Tipo    <- tibble::as.tibble(dummies::dummy(dfx$Tipo))
   Metodo  <- tibble::as.tibble(dummies::dummy(dfx$Metodo))
