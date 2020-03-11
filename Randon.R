@@ -89,6 +89,10 @@ dfx <- df %>%
 # E ESPERADO QUE ESSSAS DUAS VARIAVEIS SEJAM IMPORTANTES PARA A PRECIDAO DE 
 # PRECOS.
 
+# CHECK DE NA'S
+naniar::gg_miss_var(dfx, show_pct = TRUE) +
+  labs(x = "Variáveis", y = "% NA")
+
 # A VARIAVEL Terreno POSSUI ALGUMAS OBSERVACOES QUE CHAMAM ATENCAO. COMO TERRENO
 # IGUAL A 0 (ZERO). CONTUDO ESSA INFORMACAO FOI MANTIDA, TENDO EM VISTA O
 # RACIOCINIO QUE Terreno E A DIFERENCA ENRE TERRENO DISPONIVEL E AREA CONSTRUIDA
@@ -255,30 +259,35 @@ cowplot::plot_grid(p4, p5, p6, align = 'hv')
 
 
 # PRECO VERSUS METODO
-dfx %>% ggplot() +
-  geom_violin(aes(x = Metodo, y = log10(Preco)), 
-              fill = "blue", alpha = 0.2, draw_quantiles = 0.5) +
+dfx %>% ggplot(aes(x = Metodo, y = log10(Preco))) +
+  geom_violin(fill = "blue", alpha = 0.2, draw_quantiles = 0.5) +
   coord_flip() +
   theme_bw()
 
-#
+# EM RELACAO AO METODO DE VENDA, A MEDIA DE PRECO NAO APRESENTA MUITA DIFERENCA,
+# POREM QUANDO O METODO E O `PI`, TEMOS UMA MAIOR DISPERSAO DE OBSERVACOES.
+# SE `PI` FOR INTERPRETADO COMO IMOVEIS DE HERANCA, E `VB` COMO FLOOD PARA 
+# LEILAO (ONDE O "COMPRADOR" INFLACIONA O PRECO), PODE-SE CONSTATAR O PORQUE
+# DESSA ALTA DISPERSAO, POIS NAO HA UMA INTENCAO CLARA NA COMPRA DO IMOVEL, E 
+# SIM UMA CONSEGUENCIA.
+
+
+# PLOT DE DISPERSAO  EM FUNCAO DA REGIAO
 dfx %>% 
   dplyr::select(Preco, Quartos, Distancia, NumImoveis, Regiao) %>% 
-  PairPlot(c("Preco", "Quartos", "Distancia", "NumImoveis"), 
-           title = "Matriz de dispersão",
-           group_var = "Regiao")
+  WVPlots::PairPlot(c("Preco", "Quartos", "Distancia", "NumImoveis"), #VARIAVEIS
+                    title = "Matriz de dispersão",
+                    group_var = "Regiao")
 
 dfx %>% 
-  dplyr::select(Preco, Quartos, Distancia, NumImoveis, Regiao)
-
-
-dfx %>% 
-  dplyr::select(log10(Preco), Quartos, Distancia, NumImoveis, Regiao) %>% 
+  dplyr::select(Preco, Quartos, Distancia, NumImoveis, Regiao) %>% 
+  dplyr::mutate(Preco = log10(Preco)) %>%           # PRECO TRANSFORMADO
   WVPlots::PairPlot(c("Preco", "Quartos", "Distancia", "NumImoveis"), 
                     title = "Matriz de dispersão",
                     group_var = "Regiao")
 
-# PLOT DENSIDADE
+
+# PLOT DENSIDADE - DEMAIS VARIAVEIS
 # QUARTOS
 p_quart <- ggplot(dfx, aes(x = Quartos)) + 
   geom_density(fill = "blue", alpha = 0.2) +
@@ -286,32 +295,6 @@ p_quart <- ggplot(dfx, aes(x = Quartos)) +
              color = "red", linetype = "dashed", size = 1) +
   ylab("Densidade") + xlab("Quarto") +
   theme_bw()
-
-p_log_quart <- ggplot(dfx, aes(x = log10(Quartos))) + 
-  geom_density(fill = "blue", alpha = 0.2) +
-  geom_vline(aes(xintercept = mean(log10(Quartos))),
-             color = "red", linetype = "dashed", size = 1) +
-  ylab("Densidade") + xlab("log10(Quarto)") +
-  theme_bw()
-p_quart <- cowplot::plot_grid(p_quart, p_log_quart, align = 'hv', nrow = 1)
-
-# DISTANCIA
-p_dist <- ggplot(dfx, aes(x = Distancia)) + 
-  geom_density(fill = "black", alpha = 0.2) +
-  geom_vline(aes(xintercept = mean(Distancia)),
-             color = "red", linetype = "dashed", size = 1) +
-  ylab("Densidade") + xlab("Distância") +
-  theme_bw()
-
-p_log_dist <- dfx %>% 
-  dplyr::filter(Distancia > 0) %>%
-  ggplot(aes(x = log10(Distancia))) + 
-  geom_density(fill = "black", alpha = 0.2) +
-  geom_vline(aes(xintercept = mean(log10(Distancia))),
-             color = "red", linetype = "dashed", size = 1) +
-  ylab("Densidade") + xlab("log10(Distância > 0)") +
-  theme_bw()
-p_dist <- cowplot::plot_grid(p_dist, p_log_dist, align = 'hv', nrow = 1)
 
 # NUMERO IMOVEIS NO BAIRRO
 p_nimov <- ggplot(dfx, aes(x = NumImoveis)) + 
@@ -321,18 +304,7 @@ p_nimov <- ggplot(dfx, aes(x = NumImoveis)) +
   ylab("Densidade") + xlab("NumImoveis") +
   theme_bw()
 
-p_log_nimov <- dfx %>% 
-  ggplot(aes(x = log10(NumImoveis))) + 
-  geom_density(fill = "green", alpha = 0.2) +
-  geom_vline(aes(xintercept = mean(log10(NumImoveis))),
-             color = "red", linetype = "dashed", size = 1) +
-  ylab("Densidade") + xlab("log10(DNumImoveis)") +
-  theme_bw()
-p_nimov <- cowplot::plot_grid(p_nimov, p_log_nimov, align = 'hv', nrow = 1)
-
-cowplot::plot_grid(p_quart, NA, p_dist, 
-                   NA, p_nimov, NA, 
-                   align = 'hv', nrow = 2)
+cowplot::plot_grid(p_quart, p_nimov, align = 'hv')
 
 # PRECO VERSUS TEMPO
 dfx %>% 
@@ -341,6 +313,19 @@ dfx %>%
   facet_wrap(~Regiao) +
   scale_color_gradientn(colours = terrain.colors(10)) +
   theme_bw()
+
+# PODEMOS PERCEBER QUE OS IMOVEIS MAIS LONGES DO CENTRO (MAIORES VALORES DE 
+# Distancia) FORAM VENDIDOS MAIS RECENTE, PREDOMINAM NAS REGIOES DE Eastern 
+# Victoria, Northern Victoria, South-Eastern Metropolitan e Western Victoria.
+# IMOVEIS COM ESSAS CARACTERISTICAS TAMBEM NAO COSTUMAM APRESENTAR PRECO ALTO.
+
+# DIANTE DISSO, VARIAS HIPOTESES PODEM SURGIR, COMO:
+# - INFLUENCIA DO MODO DE VIDA;
+# - PERSPECTIVA DE REDUCAO DO TEMPO DE DESLOCAMENTO A CIDADE/COMPROMISSOS;
+# -  HA INFLUENCIA DO MERCADO FINANCEIRO?;
+# ...
+# CONTUDO, DIANTE DESTA PERSPECTIVA, FICA NOTORIO A RELEVANCIA DO POSICIONAMENTO
+# GEOGRAFICO DOS IMOVEIS, COM GRUPO DE Regiao. 
 
 dfx %>% 
   ggplot(aes(x = Data, y = log10(Preco))) +
@@ -352,13 +337,6 @@ dfx %>%
 #
 dfx %>% 
   ggplot(aes(x = Data, y = Distancia)) +
-  geom_point(aes(col = Preco), alpha = .5) +
-  facet_wrap(~Regiao) +
-  scale_color_gradientn(colours = terrain.colors(10)) +
-  theme_bw()
-
-dfx %>% 
-  ggplot(aes(x = Data, y = Distancia)) +
   geom_point(aes(col = log10(Preco)), alpha = .5) +
   facet_wrap(~Regiao) +
   scale_color_gradientn(colours = terrain.colors(10)) +
@@ -371,13 +349,7 @@ dfx %>%
   scale_color_gradientn(colours = terrain.colors(10)) +
   theme_bw()
 
-dfx %>% 
-  ggplot(aes(x = Data, y = Distancia)) +
-  geom_point(aes(col = log10(Preco)), alpha = .5) +
-  scale_color_gradientn(colours = terrain.colors(10)) +
-  theme_bw()
-
-#
+# PRECO VERSUS DISTANCIA
 dfx %>% 
   ggplot(aes(x = Distancia, y = Preco)) +
   geom_point(aes(col = Regiao), alpha = .5) +
@@ -388,32 +360,59 @@ dfx %>%
   geom_point(aes(col = Regiao), alpha = .5) +
   theme_bw()
 
+# AO MONTAR O GRAFIDO DE PRECO VERSUS A DISTANCIA, NAO E TOA PERCEPTIVEL ALGUMAS
+# DAS INFORMACOES ANTERIORES. POREM, COMO JA SABEMOS QUE A VARIAVEL Distancia
+# PODE SER RELEVANTE PARA A NOSSA ANALISE E COMO TEMOS O PONTO GEORREFERENCIADO
+# DOS IMOVEIS, PROXIMO PASSO APRESENTA UMA ANALISE DO PRECO EM FUNCAO DA DISTRI-
+# BUICAO ESPACIAL REAL SOBRE A CIDADE DE MELBOURNE, NA AUSTRALIA. QUE E A 
+# CIDADE QUE CONTEM ESTES IMOVEIS.
+
+# UTILIZANDO AS INFORMACOES DE LATITUDE E LONGITUDE DOS IMOVEIS, FOI CRIADO O 
+# PRIMEIRO MAPA DE SITUACAO UTILIZANDO O PACOTE `ggmap`.
 # MAPA DE LOCALIZACAO IMOVEIS
 ggmap::qmplot(Longitude, Latitude, data = dfx, 
               geom = "density2d", size = I(2), alpha = .1) +
   theme(legend.position = "none")
 
-# NA
-naniar::gg_miss_var(dfx, show_pct = TRUE) +
-  labs(x = "Variáveis", y = "% NA")
+# ESTE MAPA NOS PERMITE VERIRICAR A DENSIDADE DE IMOVEIS NA CIDADE. E, MESMO
+# NAO CONHECENDO A CIDADEM PODEMOS PERCEBER QUE HA POUCOS IMOVEIS NA ZONA RURAL
+# OU SUBURBIO DA CIDADADE. A MAIORIA ESTA PROXIMO AO CENTRO, AO LONGO DA 
+# BAIA DE PORT PHILLIP.
 
-# OBTENDO COTACAO HISTORICA DO DOLAR AUSTRALIANO ----
+# APESAR DA POSSIBILIDADE DE EMPREGO DE GEOESTATISTICA PARA A PREDICAO DO Preco,
+# ESTA ABORDAGEM NAO FOI EMPREGADA EM FUNCAO DO CUSTO COMPUTACIONAL PARA 
+# ALGORITMOS MAIS ROBUSTOS, COMO O HIBRIDO DE RANDOM FOREST COM IDW.
+
+
+# INFLUENCIA DO MERCADO FINANCEIRO SOBRE O PRECO DOS IMOVEIS ----
+# COM A INFORMACAO QUE QUE AS CASAS EM ALGUMAS REGIOES APRESENTARAM MENOR VALOR 
+# DE PRECO EM PERIODO MAIS RECENTE, FOI BUSCADO VERIFICAR SE HOUVE ALGUMA 
+# INFLUENCIA EXTERNA, COMO O OCORRIDO NOS EUA EM 2008.
+
+# A PARTIR DESTA HIPOTESE, FOI VERIFICADO A COTACAO DO DOLAR AUSTRALIANO EM 
+# EM RELACAO AO REAL BRASILEIRO (POIS O Preco ESTA EM REAIS E OS IMOVEIS EM 
+# ANALISE ESTAO NA AUSTRALIA).
+
+# HISTORICO DA COTACAO - TAXA CAMBIAL
 quantmod::getSymbols("AUDBRL=x")
 
 # AJUSTANDO ARQUIVO
 colnames(`AUDBRL=X`) <- c("x", "xx", "xxx", "fechamento", "xxxx", "xxxxx")
 AUD <- data.frame(Data = index(`AUDBRL=X`),
                   `AUDBRL=X`, row.names = NULL)
+
+# EXTRAINDO HISTORICO DE PRECO DO DOLAR AUSTRALIANO AO FINAL DO DIAL
 AUD <- AUD %>%
   dplyr::select(Data, fechamento) %>% 
-  na.omit()
+  na.omit() # REMOVENDO VALORES AUSENTES
 
-# MERGE DE DF'S
+
+# MERGE DE DATASETS
 df_ts <- AUD %>% 
   dplyr::left_join(dfx, by = "Data") %>% 
   tidyr::drop_na(Preco)
 
-# plot
+# PLOT PARA VERIFICACAO DE TENDENCIAS
 p_aud <- df_ts %>% 
   ggplot(aes(x = Data)) +
   geom_line(aes(y = fechamento), alpha = .5) +
@@ -439,18 +438,27 @@ p_ts <- df_ts %>%
 
 cowplot::plot_grid(p_aud, p_ts, align = 'hv', 
                    rel_heights = c(.3, 1), nrow = 2)
+
+# NAO FOI VERIFICADO A INFLUENCIA DO MERCADO FINANCEIRO NO PRECO DOS IMOVEIS
+
 #
-rm(df_ts, `AUDBRL=X`, AUD)
+rm(df_ts, `AUDBRL=X`, AUD) # REMOCAO DE OBJETOS
 
 # FILL NA ----
+# PARA PROSSEGUIR PARA A MODELAGEM, E NECESSARIO O PREENCHIMENTO DOS VALORES
+# AUSENTES E A REESTRUTURACAO DE VARIAVEIS QUE POSSUAM LEVELS (VARIAVEIS CATE-
+# GORICAS).
+
 fill_df <- dfx %>% 
   dplyr::select(-c(Latitude, Longitude, Quartos_aux, Banheiros, 
                    Garagem, Terreno, AnoConstrucao, AreaConstruida, 
                    id))
 
+# VARIAVEIS PARA PREDICAO DE OUTRAS - FILL NA
 vars <- c("Quartos", 'Tipo', 'Preco', 'Metodo', 'NumImoveis', 
-          'Distrito', "Distancia", 'Regiao') # VARIAVEIS PARA PREDICAO DE OUTRAS - FILL NA
+          'Distrito', "Distancia", 'Regiao') 
 
+# SELECAO PARA PREENCHIMENTO
 fill <- c("Latitude", "Longitude", "Quartos_aux", 'Banheiros', 
           'Garagem', 'Terreno', 'AnoConstrucao', 'AreaConstruida')
 
@@ -467,7 +475,7 @@ handling <- function(x) {
   
 }
 
-# Extraindo
+# EXTRAINDO
 k <- 1:8 %>% # 
   purrr::map(handling)
 
@@ -478,15 +486,16 @@ names(aux) <- fill
 aux <- aux %>% 
   tibble::as_tibble()
 
-# Criando banco de dados tratado: 
+# CRIANDO O NOVO DATASET PREENCHIDO
 fill <- fill_df %>% 
   dplyr::select(vars) %>% 
   dplyr::bind_cols(aux)
 
-# CHECK NA
+# CHECK NA'S
 naniar::gg_miss_var(fill, show_pct = TRUE) +
   labs(x = "Variáveis", y = "% NA")
 
+# DUMMIFICACAO DEVARIAVEIS CATEGORICAS UTLIZANDO A TECNICA DE ONE HOT ENCODING
 {
   Tipo    <- tibble::as.tibble(dummies::dummy(dfx$Tipo))
   Metodo  <- tibble::as.tibble(dummies::dummy(dfx$Metodo))
