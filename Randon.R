@@ -1,11 +1,12 @@
+###
+###
+# ATENCAO: CODIGO DESENVOLVIDO EM R
 
-# INFORMACOES ----
-# CODIGO DESENVOLVIDO EM R
 
-# TESTE PARA VAGA DE CIENTISTA DE DADOS NA RANDON
+# INFORMACOES PRELIMINARES ----
 # NOME: BRENNER BIASI SOUZA SILVA
 
-# SOFTWARE
+# SOFTWARES E PC
 # R version 3.6.2 (2019-12-12)
 # PLATAFORMA - x86_64-apple-darwin15.6.0
 # macOS MOJAVE
@@ -13,62 +14,88 @@
 
 
 # ADEQUANDO O AMBIENTE DE TRABALHO ----
-# ATENCAO: TODO O ENVIRONMENT SERA PREVIAMENTE EXCLUIDO.
+
+#### INSTRUCAO:
+
+# O ARQUIVO `~/precos_imoveis.csv`, REFERENTE AO BANCO DE DADOS (DATASET), 
+# DEVERA ESTAR NO MESMO DIRETORIO DE TRABALHO DESTE SCRIPT.
+
+
+# ATENCAO: TODO O ENVIRONMENT ESERA PREVIAMENTE LIMPO
 rm(list = ls()); gc()
 
+
 # DATASET ----
-# IMPORT DATASET
+# IMPORTANDO DATASET
 df <- read.csv("precos_imoveis.csv", header = TRUE)
 
-# PACOTES REQUERIDOS ----
+# INSTALANDO E CARREGANDO PACOTES REQUERIDOS PARA ESTE SCRIPT----
 {
   if(!require("pacman")) install.packages("pacman")
   
   pacman::p_load(dplyr, tidyr, naniar, ggplot2, lubridate, stringr, 
                  dummies, missForest, tibble, quantmod, caret, Metrics, 
                  reshape2, spacetime, ggmap, cowplot, WVPlots, purrr, 
-                 caretEnsemble, clustMixType, plotly, xgboost, glmnet, randomForest)
+                 caretEnsemble, clustMixType, plotly, xgboost, glmnet, 
+                 randomForest)
   }
 
-# ANALISE E AJUSTE DO DATASET ----
-#ESTRUTURA
+# ANALISE E AJUSTE DA ESTRUTURA DO DATASET ----
+# ESTRUTURA DO DATASET, CLASSE DE VARIAVEIS
 dplyr::glimpse(df)
 
-# NA'S
+# VERIFICACAO VISUAL DE VALOR AUSENTES (NA) NO DATASET
 naniar::gg_miss_var(df, show_pct = TRUE) +
   labs(x = "Variáveis", y = "% NA")
 
-# SELECAO INCIAL, TRANSFORMACAO E AJUSTE DE VARIAVEIS
+# - SELECAO INCIAL, TRANSFORMACAO E AJUSTE DE VARIAVEIS -
+# NESTA ETAPA FOI CRIADO UMA COLUNA DE ID PARA CONTROLE DA POSICAO (ROW) DO 
+# IMOVEL FRENTE AO DATASET ORIGINAL. POSTERIORMENTE FOI REALIZADO A EXTRACAO DO
+# NOME DOS LOGRADOUROS DOS IMOVEIS, COMO PROCESSO DE FEATURE ENGINEERING. 
+# TAMBEM FOI REALIADO A ADEQUADAO DAS VARIAVEIS CATEGORICAS (FACTOR), BEM 
+# COMO OUTRAS ACOES, QUE ESTAO COMENTADAS AO LONGO DO CODIGO.
 dfx <- df %>% 
   dplyr::mutate(id = 1:nrow(df), 
-                Data = lubridate::parse_date_time(Data, '%d-%m-%Y'),
-                Data = as.Date(Data),
-                Endereco = stringr::str_to_lower(Endereco),
-                Endereco = stringr::str_trim(Endereco),
+                Data = lubridate::parse_date_time(Data, '%d-%m-%Y'), 
+                Data = as.Date(Data),  #  ADEQUACAO DA VARIAVEL Data
+                Endereco = stringr::str_to_lower(Endereco), #  EXTRACAO DO NOME 
+                Endereco = stringr::str_trim(Endereco),     # DOS LOGRADOUROS 
                 Endereco = stringr::str_replace_all(Endereco, "[:digit:]", ""),
                 Endereco = gsub(" *\\b[[:alpha:]]{1}\\b *", "", Endereco),
                 Endereco = gsub("[[:punct:]]", "", Endereco),
                 Endereco = stringr::str_trim(Endereco),
                 Endereco = as.factor(Endereco),
-                Tipo = as.factor(Tipo),
-                Metodo = as.factor(Metodo),
+                Tipo     = as.factor(Tipo), # ADEQUADAO DE VARIAVEIS
+                Metodo   = as.factor(Metodo),
                 Latitude = Latitudo,
-                Regiao = as.factor(Regiao),
+                Regiao   = as.factor(Regiao),
                 Distrito = as.factor(Distrito),
                 NumImoveis = as.factor(NumImoveis),
-                Distancia = as.factor(Distancia)) %>%
-  dplyr::filter(Regiao   != "#N/A",
+                Distancia  = as.factor(Distancia)) %>%
+  dplyr::filter(Regiao   != "#N/A", # REMOCAO DE ERROS DE TABULACAO
                 Distrito != "#N/A",
                 NumImoveis != "#N/A", 
-                Distancia  != "#N/A") %>% # REMOVENDO ABERRACAO
-  dplyr::mutate(NumImoveis  = as.numeric(as.character(NumImoveis)),
-                Distancia   = as.numeric(as.character(Distancia)),
-                Latitude    = as.numeric(as.character(Latitude)),
-                Longitude   = as.numeric(as.character(Longitude))) %>%  
-  dplyr::select(-Latitudo) %>% 
-  tidyr::drop_na(Preco) 
+                Distancia  != "#N/A") %>%
+  dplyr::mutate(NumImoveis  = as.numeric(as.character(NumImoveis)),# ADEQUACAO
+                Distancia   = as.numeric(as.character(Distancia)), #    DE
+                Latitude    = as.numeric(as.character(Latitude)),  # VARIAVEIS
+                Longitude   = as.numeric(as.character(Longitude))) %>% # RENAME
+  dplyr::select(-Latitudo) %>%  # REMOCAO DA VARIAVEL DUPLICADA
+  tidyr::drop_na(Preco)         # REMOCAO DE NA'S NA VARIAVEL PRECO
 
-# EDA ----
+# A PRIORI, A UNICA VARIAVEI QUE E POSSIVEL OMITIR OS NA'S E NA VARIAVEL ALVO,
+# QUE SERA O PRECO. AS OUTRAS VARIAVEIS COM NA'S, APESAR DOS ELEVADOS %, COMO 
+# AreaConstruida E AnoConstrucao, TERAO SEUS DADOS FALTANTES PREENCHIDOS, POIS
+# E ESPERADO QUE ESSSAS DUAS VARIAVEIS SEJAM IMPORTANTES PARA A PRECIDAO DE 
+# PRECOS.
+
+# A VARIAVEL Terreno POSSUI ALGUMAS OBSERVACOES QUE CHAMAM ATENCAO. COMO TERRENO
+# IGUAL A 0 (ZERO). CONTUDO ESSA INFORMACAO FOI MANTIDA, TENDO EM VISTA O
+# RACIOCINIO QUE Terreno E A DIFERENCA ENRE TERRENO DISPONIVEL E AREA CONSTRUIDA
+# NO TERRENO.
+
+
+# ANALISE EXPLORATORIA DOS DADOS ----
 # DENSIDADE
 p <- ggplot(dfx, aes(x = Preco)) + 
   geom_density(fill = "blue", alpha = 0.2) +
@@ -83,58 +110,149 @@ p_log <- ggplot(dfx, aes(x = log10(Preco))) +
              color = "red", linetype = "dashed", size = 1) +
   ylab("Densidade") + xlab("log10(Preço)") +
   theme_bw()
-cowplot::plot_grid(p, p_log, align = 'hv', nrow = 1)
 
-# PRECO VERSUS REGIAO
+cowplot::plot_grid(p, p_log, align = 'hv', nrow = 1) # JUNTANDO PLOTS p E p_log
+
+# A VARIAVEL PRECO APRESENTA ASSIMETRIA A ESQUERDA. PARA TANTO, A TRANSFORMACAO
+# UTILIZANDO `log10()`, LOG NA BASE 10, APRESENTA SER UMA BOA SOLUCAO PARA
+# TRANSFORMACAO DOS DADOS E POTENCIALIZACAO DE PREDICAO.
+
+# TAL FATO SOBRE A TRANSOFORMACAO PODE SER VISUALIZADO ABAIXO, COM  O GANHO DE 
+# INFORMACAO VISUAL A PARTIR DA TRANSFORMACAO DA VARIAVEL.
+
+
+# GRAFICO DO PRECO VERSUS REGIAO
 dfx %>% 
-  ggplot() +
-  geom_violin(aes(x = Regiao, y = log10(Preco)), 
-              fill = "blue", alpha = 0.2, draw_quantiles = 0.5) +
+  ggplot(aes(x = Regiao, y = Preco)) + # VARIAVEL SEM TRANSFORMACAO LOG10
+  geom_violin(fill = "blue", alpha = 0.2, draw_quantiles = 0.5) +
   coord_flip() +
   theme_bw()
+
+dfx %>% 
+  ggplot(aes(x = Regiao, y = log10(Preco))) + # VARIAVEL COM TRANSFORMACAO
+  geom_violin(fill = "blue", alpha = 0.2, draw_quantiles = 0.5) +
+  coord_flip() +
+  theme_bw()
+
+# PODEMOS CONSTATAR QUE OS MENORES PRECOS MEDIOS DE IMOVEIS ESTAO NA REGIAO DE 
+# WESTERN VICTORIA. ALÉM DISTO, ESTA REGIAO, EM CONJUNTO COM AS REGIOES DE 
+# NORTHERN VICTORIA E EASTERN VICTORIA, APRESENTAM BAIXA DISPERSAO NOS VALORES
+# DOS IMOVEIS. A REGIAO COM MAIOR MEDIA DE PRECO, E TAMBEM COM MAIOR DISPERSAO,
+# E A REGIAO DE SOUTHERN METROPOLITAN.
 
 # PRECO VERSUS DISTRITO
 dfx %>% 
-  ggplot() +
-  geom_violin(aes(x = Distrito, y = log10(Preco)), 
-              fill = "blue", alpha = 0.2, draw_quantiles = 0.5) +
+  ggplot(aes(x = Distrito, y = log10(Preco))) +
+  geom_violin(fill = "blue", alpha = 0.2, draw_quantiles = 0.5) +
   coord_flip() +
   theme_bw()
 
+# SOBRE O PRECO EM RELACAO AO DISTRITO, OS MENORES PRECOS DE IMOVEIS ESTAO EM 
+# Maribyrnong City Council, CONTUDO A MENOR MEDIA PERTENCE A Moorabool Shire 
+# Council. 
+
+
 # PRECO VERSUS DISTANCIA, METODO
 p2 <- dfx %>% 
-  ggplot() +
-  geom_point(aes( x = log10(Preco), y = (Distancia)),
-             col = "grey", alpha = 0.4) +
-  geom_smooth(aes(x = log10(Preco), y = (Distancia))) +
+  ggplot(aes(x = Preco, y = Distancia)) +
+  geom_point(col = "grey", alpha = 0.4) +
+  geom_smooth() +
   facet_wrap(~Metodo, nrow = 1) +
   theme_bw()
 
 p3 <- dfx %>% 
-  ggplot() +
-  geom_point(aes( x = log10(Preco), y = (Distancia)),
-             col = "grey", alpha = 0.4) +
-  geom_smooth(aes(x = log10(Preco), y = (Distancia))) +
+  ggplot(aes(x = log10(Preco), y = Distancia)) +
+  geom_point(col = "grey", alpha = 0.4) +
+  geom_smooth() +
   facet_wrap(~Metodo, scale = "free", nrow = 1) +
   theme_bw()
+
 cowplot::plot_grid(p2, p3, align = 'hv', nrow = 2)
 
+# COMO PODE SER CONSTATADO NO PLOT ACIMA, A VARIAVEL PRECO E DISTANCIA NAO 
+# APRESENTAM BOA CORRELACAO. NAO HA UM PADRAO CLARO ERNTRE ESSAS VARIAVEIS, ATE
+# MESMO UTILIZANDO O METODO DE VENDA COMO UMA FACETA.
+
+
+# CONTUDO, ASSIM COMO REALIZADO PARA A VARIAVEL PRECO, A DENDIDADE DAS OUTRAS
+# OUTRAS VARIAVEIS TAMBÉM FORAM ANALISADAS.
+
+p_dis_d <- ggplot(dfx, aes(x = Distancia)) + 
+  geom_density(fill = "blue", alpha = 0.2) +
+  geom_vline(aes(xintercept = mean(Distancia)),
+             color = "red", linetype = "dashed", size = 1) +
+  ylab("Densidade") + xlab("Distância") +
+  theme_bw()
+
+p_dis_d_log <- ggplot(dfx, aes(x = ifelse(Distancia == 0, 
+                                          0, log10(Distancia)))) + 
+  geom_density(fill = "blue", alpha = 0.2) +
+  geom_vline(aes(xintercept = mean(ifelse(Distancia == 0, 
+                                          0, log10(Distancia)))),
+             color = "red", linetype = "dashed", size = 1) +
+  ylab("Densidade") + xlab("log10(Distância)") +
+  theme_bw()
+
+p_dis_d_ln <- ggplot(dfx, aes(x = ifelse(Distancia == 0, 
+                                         0, log(Distancia)))) + 
+  geom_density(fill = "blue", alpha = 0.2) +
+  geom_vline(aes(xintercept = mean(ifelse(Distancia == 0, 
+                                          0, log(Distancia)))),
+             color = "red", linetype = "dashed", size = 1) +
+  ylab("Densidade") + xlab("ln(Distância)") +
+  theme_bw()
+
+p_dis_d_sq <- ggplot(dfx, aes(x = ifelse(Distancia == 0, 
+                                         0, sqrt(Distancia)))) + 
+  geom_density(fill = "blue", alpha = 0.2) +
+  geom_vline(aes(xintercept = mean(ifelse(Distancia == 0, 
+                                          0, sqrt(Distancia)))),
+             color = "red", linetype = "dashed", size = 1) +
+  ylab("Densidade") + xlab("√(Distância)") +
+  theme_bw()
+
+cowplot::plot_grid(p_dis_d, p_dis_d_log, p_dis_d_ln, p_dis_d_sq,
+                   align = 'hv', nrow = 2)
+
+# PODE-SE OBSERVAR QUE ALEM DA TRANSFORMACAO LOG10, OUTRAS TRANSFORMACOES PODEM
+# SER FEITAS. CONTUDO, TENDO EM VISTA O PRINCIPIO DA PARCIMONIA, DEMAIS 
+# TRANSFORMACOES NAO SERAO EMPREGADAS, POIS OS ALGORITMOS A SEREM UTILIZADOS SAO 
+# ROBUSTOS A OUTLIERS E VIES.
+
 # PRECO VERSUS DISTANCIA, REGIAO
+# VARIAVEIS PRECO E DISTANCIA COM TRANSFORMACOES
+# geom_smooth() == REGRESSAO PREVISTA PARA A MASSA DE DADOS
 p4 <- dfx %>% 
-  ggplot() +
-  geom_point(aes( x = log10(Preco), y = log10(Distancia)),
-             fill = "blue", alpha = 0.2) +
-  geom_smooth(aes(x = log10(Preco), y = log10(Distancia))) +
+  ggplot(aes( x = log10(Preco), y = ifelse(Distancia == 0, 
+                                          0, log10(Distancia)))) +
+  geom_point(fill = "blue", alpha = 0.2) +
+  geom_smooth() +
   facet_wrap(~Regiao) +
+  ylab("log10(Distância)") +
   theme_bw()
+
 p5 <- dfx %>% 
-  ggplot() +
-  geom_point(aes( x = log10(Preco), y = (Distancia)),
-             fill = "blue", alpha = 0.2) +
-  geom_smooth(aes(x = log10(Preco), y = (Distancia))) +
+  ggplot(aes(x = log10(Preco), y = Distancia)) +
+  geom_point(fill = "blue", alpha = 0.2) +
+  geom_smooth() +
   facet_wrap(~Regiao) +
+  ylab("Distância") +
   theme_bw()
-cowplot::plot_grid(p4, p5, align = 'hv', nrow = 2)
+
+p6 <- dfx %>% 
+  ggplot(aes(x = log10(Preco), y = ifelse(Distancia == 0, 
+                                         0, sqrt(Distancia)))) +
+  geom_point(fill = "blue", alpha = 0.2) +
+  geom_smooth() +
+  facet_wrap(~Regiao) +
+  ylab("√(Distância)") +
+  theme_bw()
+
+cowplot::plot_grid(p4, p5, p6, align = 'hv')
+
+# E PERCEPTIVEL TAMBEM QUE NAO HA TANTO GANHO DE INFORMACAO. OS DADOS CONTINUAM
+# SEM APRESENTAR TENDENCIAS CLARA.
+
 
 # PRECO VERSUS METODO
 dfx %>% ggplot() +
@@ -607,21 +725,20 @@ df_model <- df_aux %>%
 {
   set.seed(1)
   
-  teste <- df_aux[sample(nrow(df_model), nrow(df_model)*0.1), ]
+  teste <- df_model[sample(nrow(df_model), nrow(df_model)*0.1), ]
   }
 
 # SET DE TREINAMENTO E VALIDACAO
 {
   set.seed (1) 
-  index <- caret::createDataPartition(teste$Preco, 
-                                      p = 0.75,       
-                                      list = FALSE) 
+  index <- caret::createDataPartition(teste$Preco, p = 0.75, list = FALSE) 
   
   train <- teste[index, ]
   test  <- teste[-index, ]
   
   my_control <- caret::trainControl(method = "cv",
                                     number = 10,
+                                    index  = caret::createFolds(teste$Preco, 5),
                                     savePredictions = T)
 
   # MODELOS 
@@ -699,5 +816,12 @@ dotplot(resamplesF, metric = "RMSE")
 
 # ANALISE DE PERFORMANCE DO MODELO
 predF <- caretEnsemble::caretEnsemble(model_listF)
-caret::postResample(predict(predF, test), 
+final_model_stack <- caret::postResample(predict(predF, test), 
                     obs  = test$Preco)
+
+dotplot(final_model_stack, metric = "RMSE")
+
+# CONCLUSAO ----
+
+
+# BRENNER BIASI SOUZA SILVA
