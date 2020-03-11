@@ -1,8 +1,16 @@
 
 # INFORMACOES ----
 # CODIGO DESENVOLVIDO EM R
+
 # TESTE PARA VAGA DE CIENTISTA DE DADOS NA RANDON
 # NOME: BRENNER BIASI SOUZA SILVA
+
+# SOFTWARE
+# R version 3.6.2 (2019-12-12)
+# PLATAFORMA - x86_64-apple-darwin15.6.0
+# macOS MOJAVE
+# RSTUDIO Version 1.2.5033
+
 
 # ADEQUANDO O AMBIENTE DE TRABALHO ----
 # ATENCAO: TODO O ENVIRONMENT SERA PREVIAMENTE EXCLUIDO.
@@ -18,7 +26,8 @@ df <- read.csv("precos_imoveis.csv", header = TRUE)
   
   pacman::p_load(dplyr, tidyr, naniar, ggplot2, lubridate, stringr, 
                  dummies, missForest, tibble, quantmod, caret, Metrics, 
-                 reshape2, spacetime, ggmap, cowplot, WVPlots, purrr, caretEnsemble)
+                 reshape2, spacetime, ggmap, cowplot, WVPlots, purrr, 
+                 caretEnsemble, clustMixType, plotly, xgboost, glmnet, randomForest)
   }
 
 # ANALISE E AJUSTE DO DATASET ----
@@ -52,10 +61,10 @@ dfx <- df %>%
                 Distrito != "#N/A",
                 NumImoveis != "#N/A", 
                 Distancia  != "#N/A") %>% # REMOVENDO ABERRACAO
-  dplyr::mutate(NumImoveis = as.numeric(as.character(NumImoveis)),
-                Distancia  = as.numeric(as.character(Distancia)),
-                Latitude   = as.numeric(as.character(Latitude)),
-                Longitude  = as.numeric(as.character(Longitude))) %>%  
+  dplyr::mutate(NumImoveis  = as.numeric(as.character(NumImoveis)),
+                Distancia   = as.numeric(as.character(Distancia)),
+                Latitude    = as.numeric(as.character(Latitude)),
+                Longitude   = as.numeric(as.character(Longitude))) %>%  
   dplyr::select(-Latitudo) %>% 
   tidyr::drop_na(Preco) 
 
@@ -203,8 +212,6 @@ p_log_nimov <- dfx %>%
   theme_bw()
 p_nimov <- cowplot::plot_grid(p_nimov, p_log_nimov, align = 'hv', nrow = 1)
 
-
-
 cowplot::plot_grid(p_quart, NA, p_dist, 
                    NA, p_nimov, NA, 
                    align = 'hv', nrow = 2)
@@ -314,7 +321,8 @@ p_ts <- df_ts %>%
 
 cowplot::plot_grid(p_aud, p_ts, align = 'hv', 
                    rel_heights = c(.3, 1), nrow = 2)
-
+#
+rm(df_ts, `AUDBRL=X`, AUD)
 
 # FILL NA ----
 fill_df <- dfx %>% 
@@ -367,6 +375,7 @@ naniar::gg_miss_var(fill, show_pct = TRUE) +
   Regiao  <- tibble::as.tibble(dummies::dummy(dfx$Regiao))
   }
 
+# AJUSTE DO DATAFRAME
 df_aux <- dfx %>%
   dplyr::select(-c(Bairro, Endereco, Corretor, # ALTA QTD DE LVLS
                    Tipo, Metodo, Distrito, Regiao, 
@@ -379,13 +388,37 @@ df_aux <- dfx %>%
   dplyr::bind_cols(list(Tipo, Metodo, Regiao)) %>% 
   dplyr::mutate(Latitude  = fill$Latitude,
                 Longitude = fill$Longitude,
-                Quartos_aux = fill$Quartos_aux, 
-                Banheiros = fill$Banheiros, 
-                Garagem   = fill$Garagem, 
-                Terreno   = fill$Terreno,
-                AnoConstrucao  = fill$AnoConstrucao, 
+                Quartos_aux = as.integer(round(fill$Quartos_aux)), 
+                Banheiros = as.integer(round(fill$Banheiros)), 
+                Garagem   = as.integer(round(fill$Garagem)), 
+                Terreno   = as.integer(round(fill$Terreno)),
+                AnoConstrucao  = as.integer(round(fill$AnoConstrucao)), 
                 AreaConstruida = fill$AreaConstruida,
-                Preco = log10(Preco)) # FEATURE ENGINEERING
+                Tipo_h = as.factor(`Tipo)h`),
+                Tipo_t = as.factor(`Tipo)t`), 
+                Tipo_u = as.factor(`Tipo)u`),
+                Metodo_PI = as.factor(`Metodo)PI`),
+                Metodo_S  = as.factor(`Metodo)S`),
+                Metodo_SA = as.factor(`Metodo)SA`),
+                Metodo_SP = as.factor(`Metodo)SP`),
+                Metodo_VB = as.factor(`Metodo)VB`),           
+                Regiao_Eastern_Metropolitan = as.factor(`Regiao)Eastern Metropolitan`),
+                Regiao_Eastern_Victoria = as.factor(`Regiao)Eastern Victoria`),
+                Regiao_Northern_Metropolitan = as.factor(`Regiao)Northern Metropolitan`),     
+                Regiao_Northern_Victoria = as.factor(`Regiao)Northern Victoria`),
+                Regiao_South_Eastern_Metropolitan = as.factor(`Regiao)South-Eastern Metropolitan`),
+                Regiao_Southern_Metropolitan = as.factor(`Regiao)Southern Metropolitan`),     
+                Regiao_Western_Metropolitan  = as.factor(`Regiao)Western Metropolitan`),
+                Regiao_Western_Victoria = as.factor(`Regiao)Western Victoria`), 
+                Preco = log10(Preco)              # FEATURE ENGINEERING
+                ) %>% 
+  dplyr::select(-c(`Tipo)h`, `Tipo)t`, `Tipo)u`, 
+                   `Metodo)PI`, `Metodo)S`, `Metodo)SA`,  `Metodo)SP`, `Metodo)VB`,
+                   `Regiao)Eastern Metropolitan`, `Regiao)Eastern Victoria`,
+                   `Regiao)Northern Metropolitan`, `Regiao)Northern Victoria`,
+                   `Regiao)South-Eastern Metropolitan`, `Regiao)Southern Metropolitan`,
+                   `Regiao)Western Metropolitan`, `Regiao)Western Victoria`))
+dplyr::glimpse(df_aux)
 
 # CHECK NA
 anyNA(df_aux)
@@ -400,52 +433,271 @@ ggplot(df_aux, aes(x = Preco)) +
   ylab("Densidade") + xlab("log10(Preço)") +
   theme_bw()
 
-# PREDICAO DE PRECOS ----
+# CHECK POSSIVEIS IMOVEIS REPETIDOS
+df_dup <- df %>% 
+  dplyr::mutate(id = 1:nrow(df),
+                Preco_orig = Preco,
+                Lat_orig  = Latitudo,
+                Long_orig = Longitude,
+                Data = as.Date(Data)) %>% 
+  tidyr::drop_na(Preco) %>% 
+  dplyr::filter(Regiao   != "#N/A",
+                Distrito != "#N/A",
+                NumImoveis != "#N/A", 
+                Distancia  != "#N/A") %>% 
+  dplyr::select(Data, Preco_orig, Lat_orig, Long_orig, id) %>% 
+  dplyr::mutate(Preco = df_aux$Preco,
+                Latitude  = df_aux$Latitude,
+                Longitude = df_aux$Longitude,
+                Lat_long_orig = paste(Lat_orig, Long_orig),
+                Lat_long_pos  = paste(round(Latitude, 4), round(Longitude, 4)),
+                check   = ifelse(Lat_long_orig == Lat_long_pos, "check", "ok"),
+                Pres_NA = ifelse(is.na(Latitude) | is.na(Longitude), "duplicada", "ponto_nao_duplicado")) %>% 
+  dplyr::mutate(check = as.factor(check)) %>% 
+  na.omit() %>% 
+  dplyr::select(id, check, Pres_NA)
+table(df_dup$Pres_NA)
 
-X <- df_aux %>% 
-  dplyr::select(-Preco)
-y <- df_aux %>% 
-  dplyr::select(Preco)
+# VERIFICACAO DE POSSIVEIS OUTLIERS ----
+# AJUSTANDO DATAFRAME PARA CLUSTERING
+df_num <- df_aux %>%
+  na.omit() %>% 
+  tibble::as_tibble() %>%
+  dplyr::select_if(is.numeric) %>% 
+  scale() %>% 
+  tibble::as_tibble()
+
+df_model <- df_aux %>%
+  na.omit() %>% 
+  tibble::as_tibble() %>%
+  dplyr::select_if(is.factor) %>% 
+  dplyr::bind_cols(df_num) %>% 
+  as.data.frame()
+#
+rm(df_num)
+
+# CLUSTERING
+# ESTIMATVA DO NUMERO OTIMO DE CLUSTERS
+{
+  set.seed(1)
+  # NUMERO MAXIMO DE CLUSTERS
+  k_max <- 15
+  
+  # WITHIN CLUSTER SUM OF SQUARE
+  wss <- sapply(1:k_max, 
+                function(k){clustMixType::kproto(df_model, k)$tot.withinss})
+}
+
+wss <- data.frame(WSS = wss, 
+                   K = 1:k_max)
+
+# PLOT WSS
+ggplot(wss) +
+  geom_line(aes(x = K, y = WSS)) +
+  geom_vline(xintercept = 6, color = "red", linetype = "dashed", size = 1) +
+  scale_x_continuous(breaks = seq(2, k_max, 2)) +
+  theme_bw()
+
+# CLUSTERING COM K = 6
+df_model <- clustMixType::kproto(df_model, 6)
+df_aux_cluster <- df_aux %>%
+  dplyr::mutate(cluster = as.factor(df_model$cluster))
+
+# PLOT CLUSTER
+df_aux_cluster %>% 
+  ggplot() +
+  geom_point(aes(x = Distancia, y = Preco, col = cluster), alpha = 0.3) +
+  theme_bw()
+
+df_aux_cluster %>% 
+  ggplot() +
+  geom_point(aes(x = Distancia, y = Preco, col = NumImoveis), alpha = 0.3) +
+  facet_wrap(~cluster) +
+  theme_bw()
+
+df_aux_cluster %>% 
+  ggplot() +
+  geom_violin(aes(x = as.factor(Quartos), y = Preco, fill = as.factor(Quartos)),
+              alpha = 0.2, show.legend = F) +
+  facet_wrap(~cluster, nrow = 1) +
+  theme_bw()
+
+# PLOTS DOS CLUSTERS NO ESPACO GEORREFERENCIADO
+# MAPA DE LOCALIZACAO IMOVEIS
+ggmap::qmplot(Longitude, Latitude, data = df_aux_cluster, geom = "blank",
+              maptype = "toner-background", darken = 0.7, legend = "topleft") +
+  stat_density_2d(aes(fill = ..level..), geom = "polygon", alpha = .1, color = NA) +
+  scale_fill_gradient2("Imóveis", 
+                       low = "white", mid = "yellow", high = "red", midpoint = 13)
+
+df_aux_cluster %>% 
+  ggplot() +
+  geom_point(aes(x = Longitude, y = Latitude, 
+                 col = cluster, fill = Preco),
+             alpha = 0.3, shape = 21) +
+  xlab("Longitude") + ylab("Latitude") +
+  theme_bw()
+
+df_aux_cluster %>% 
+  ggplot() +
+  geom_point(aes(x = Longitude, y = Latitude, 
+                 col = cluster, shape = cluster)) +
+  xlab("Longitude") + ylab("Latitude") +
+  theme_bw()
+
+plot_out <- df_aux_cluster %>% 
+  ggplot() +
+  geom_point(aes(x = Longitude, y = Latitude, 
+                 col = cluster, shape = cluster)) +
+  facet_wrap(~cluster) +
+  xlab("Longitude") + ylab("Latitude") +
+  theme_bw()
+plot_out
+plotly::ggplotly(plot_out)
+
+df_aux_cluster %>% 
+  ggplot() +
+  geom_point(aes(x = Longitude, y = Latitude, 
+                 col = Preco, shape = cluster)) +
+  facet_wrap(~cluster) +
+  scale_color_gradient(low = "blue", high = "red", name = "Preço") +
+  scale_shape_discrete(guide = FALSE) + 
+  xlab("Longitude") + ylab("Latitude") +
+  labs(subtitle = "Clusters") +
+  theme_bw()
+
+
+# REMOVENDO PONTOS MAIS DISTANTES DA MASSA DE DADOS POIS E ESPERADO QUE
+# A LOCALIZACAO TENHA FORTE INFLUENCIA NO PRECO, CONTUDO E OBSERVADO QUE 
+# EXISTEM PONTOS QUE SE DISTANCIAM DA MASSA DE DADOS, CLUSTER. 
+
+p_out <- df_aux_cluster %>% 
+  dplyr::mutate(out = ifelse(df_aux$Latitude == -37.45392, "out", "ok")) %>% 
+  ggplot(aes(x = Longitude, y = Latitude)) +
+  geom_point(aes(alpha = out), 
+             shape = 21, size = 5, stroke = 1, col = "black", show.legend = F) +
+  geom_point(aes(col = Preco, shape = cluster)) +
+  facet_wrap(~cluster) +
+  scale_color_gradient(low = "blue", high = "red", name = "Preço") +
+  scale_shape_discrete(guide = FALSE) +
+  scale_alpha_manual(values = c(0, 1)) +
+  xlab("Longitude") + ylab("Latitude") +
+  labs(subtitle = "Clusters") +
+  theme_bw()
+
+ann_text <- data.frame(Latitude = -37.5, Longitude = 144.59, lab = "Outlier",
+                       cluster = factor(6, levels = c("1", "2", "3", "4", "5", "6")))
+p_out + 
+  geom_text(data = ann_text, label = "Outlier")
+
+
+df_aux_cluster %>% 
+  ggplot() +
+  geom_point(aes(x = Longitude, y = Latitude, 
+                 col = cluster, shape = cluster)) +
+  xlab("Longitude") + ylab("Latitude") +
+  theme_bw()
+
+
+# TESTE - PREDICAO DE PRECOS ----
+df_model <- df_aux %>% 
+  dplyr::mutate_if(is.factor, as.numeric) %>% 
+  dplyr::filter(Latitude != -37.45392 & Longitude != 144.5886)
 
 {
+  set.seed(1)
+  
+  teste <- df_aux[sample(nrow(df_model), nrow(df_model)*0.1), ]
+  }
+
+# SET DE TREINAMENTO E VALIDACAO
+{
   set.seed (1) 
-  part_index <- caret::createDataPartition(df_aux$Preco, 
-                                           p = 0.75,        
-                                           list = FALSE) 
-  X_train <- X[part_index, ] 
-  X_test  <- X[-part_index,] 
-  y_train <- y[part_index ] 
-  y_test  <- y[-part_index]
+  index <- caret::createDataPartition(teste$Preco, 
+                                      p = 0.75,       
+                                      list = FALSE) 
+  
+  train <- teste[index, ]
+  test  <- teste[-index, ]
   
   my_control <- caret::trainControl(method = "cv",
                                     number = 10,
-                                    savePredictions = "fianl",
-                                    allowParallel   = TRUE)
-}
+                                    savePredictions = T)
 
-{
-  set.seed(1)
-  model_list <- caretEnsemble::caretList(X_train,
-                                         y_train,
+  # MODELOS 
+  model_list <- caretEnsemble::caretList(Preco~.,
+                                         data = train,
                                          trControl = my_control,
-                                         methodList = c("lm", "rf", 
-                                                         "xgbTree", "xgbLinear"),
-                                         tuneList = NULL,
-                                         continue_on_fail = FALSE, 
-                                         preProcess = c("center", "scale", "pca"))
+                                         methodList = c("rf",
+                                                        "xgbTree",
+                                                        "xgbLinear"),
+                                         preProcess = c("center", "scale"),
+                                         importance = TRUE)
+
 }
 
+model_list$rf
+model_list$xgbTree
+model_list$xgbLinear
+
+options(digits = 3)
+mdl_res_RMSE <- data.frame(RF  = min(model_list$rf$results$RMSE),
+                           XGT = min(model_list$xgbTree$results$RMSE),
+                           XGL = min(model_list$xgbLinear$results$RMSE))
+mdl_res_RMSE
+
+resamples <- caret::resamples(model_list)
+dotplot(resamples, metric = "RMSE")
+
+# ANALISE DE PERFORMANCE DO MODELO
+pred <- caretEnsemble::caretEnsemble(model_list)
+caret::postResample(predict(pred, test), 
+                    obs  = test$Preco)
+
+# REDICAO DE PRECOS ----
+df_model <- df_aux %>% 
+  dplyr::mutate_if(is.factor, as.numeric) %>% 
+  dplyr::filter(Latitude != -37.45392 & Longitude != 144.5886)
+
+# SET DE TREINAMENTO E VALIDACAO
 {
-  set.seed(1)
-  model_spca <- caretEnsemble::caretList(X_train,
-                                         y_train,
-                                         trControl = my_control,
-                                         methodList = c("lm", "rf", 
-                                                        "xgbTree", "xgbLinear"),
-                                         tuneList = NULL,
-                                         continue_on_fail = FALSE, 
-                                         preProcess = c("center", "scale"))
+  set.seed (1) 
+  index <- caret::createDataPartition(df_model$Preco, 
+                                      p = 0.75,       
+                                      list = FALSE) 
+  
+  train <- df_model[index, ]
+  test  <- df_model[-index, ]
+  
+  my_control <- caret::trainControl(method = "cv",
+                                    number = 10,
+                                    savePredictions = T)
+  
+  # MODELOS 
+  model_listF <- caretEnsemble::caretList(Preco~.,
+                                          data = train,
+                                          trControl = my_control,
+                                          methodList = c("rf",
+                                                         "xgbTree","xgbLinear"),
+                                          preProcess = c("center", "scale"),
+                                          importance = TRUE)
+  
 }
 
+model_listF$rf
+model_listF$xgbTree
+model_listF$xgbLinear
 
+options(digits = 3)
+mdl_res_RMSE_F <- data.frame(RF  = min(model_listF$rf$results$RMSE),
+                             XGT = min(model_listF$xgbTree$results$RMSE),
+                             XGL = min(model_listF$xgbLinear$results$RMSE))
+mdl_res_RMSE_F
 
+resamplesF <- caret::resamples(model_listF)
+dotplot(resamplesF, metric = "RMSE")
+
+# ANALISE DE PERFORMANCE DO MODELO
+predF <- caretEnsemble::caretEnsemble(model_listF)
+caret::postResample(predict(predF, test), 
+                    obs  = test$Preco)
