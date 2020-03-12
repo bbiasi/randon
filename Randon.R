@@ -158,7 +158,7 @@ for (i in 1:length(variaveis)) {
 
 }
 
-df_variaveis <- dplyr::bind_rows(df_variaveis)
+df_variaveis  <- dplyr::bind_rows(df_variaveis)
 df_variaveist <- df_variaveis %>%
   dplyr::rename("Categoria" = 1) %>%
   reshape2::melt(id.vars = c("Variavel", "Categoria"))
@@ -505,7 +505,8 @@ cowplot::plot_grid(p_aud, p_ts, align = 'hv',
 #
 p_ts <- df_ts %>% 
   ggplot(aes(x = Data)) +
-  geom_point(aes(y = log10(Preco), col = Distancia), alpha = .5, show.legend = F) +
+  geom_point(aes(y = log10(Preco), col = Distancia), alpha = .5, 
+             show.legend = F) +
   facet_wrap(~Regiao, ncol = 1) +
   scale_color_gradientn(colours = terrain.colors(10)) +
   theme_bw()
@@ -513,7 +514,8 @@ p_ts <- df_ts %>%
 cowplot::plot_grid(p_aud, p_ts, align = 'hv', 
                    rel_heights = c(.3, 1), nrow = 2)
 
-# NAO FOI VERIFICADO A INFLUENCIA DO MERCADO FINANCEIRO NO PRECO DOS IMOVEIS
+# NAO FOI VERIFICADO A INFLUENCIA DO MERCADO FINANCEIRO NO PRECO DOS IMOVEIS.
+# PORTANTO, ESSA ABORDAGEM SERA DESCONTINUADA.
 
 #
 rm(df_ts, `AUDBRL=X`, AUD) # REMOCAO DE OBJETOS
@@ -536,6 +538,7 @@ vars <- c("Quartos", 'Tipo', 'Preco', 'Metodo', 'NumImoveis',
 fill <- c("Latitude", "Longitude", "Quartos_aux", 'Banheiros', 
           'Garagem', 'Terreno', 'AnoConstrucao', 'AreaConstruida')
 
+# CRIANDO FUNCAO PARA PREENCHIMENTO DOS NA'S A PARTIR DE MODELO DE RANDOM FOREST
 handling <- function(x) { 
   
   fill_aux <- fill_df %>% 
@@ -573,6 +576,7 @@ naniar::gg_miss_var(fill, show_pct = TRUE) +
 # NOTA: AS VARIAVEIS COM ELEVADA QTD DE CATEGORIAS NAO PASSARAM POR ESSE 
 # PROCESSO, POIS IMPLICARIA EM UM NUMERO EXACERBADO DE VARIAVEIS, AUMENTANDO A 
 # COMPLEXIDADE DO PROBLEMA AQUI ABORDADO.
+
 {
   Tipo    <- tibble::as.tibble(dummies::dummy(dfx$Tipo))
   Metodo  <- tibble::as.tibble(dummies::dummy(dfx$Metodo))
@@ -617,10 +621,12 @@ df_aux <- dfx %>%
                 Preco = log10(Preco)              # FEATURE ENGINEERING
                 ) %>% 
   dplyr::select(-c(`Tipo)h`, `Tipo)t`, `Tipo)u`, 
-                   `Metodo)PI`, `Metodo)S`, `Metodo)SA`,  `Metodo)SP`, `Metodo)VB`,
+                   `Metodo)PI`, `Metodo)S`, `Metodo)SA`,  `Metodo)SP`, 
+                   `Metodo)VB`,
                    `Regiao)Eastern Metropolitan`, `Regiao)Eastern Victoria`,
                    `Regiao)Northern Metropolitan`, `Regiao)Northern Victoria`,
-                   `Regiao)South-Eastern Metropolitan`, `Regiao)Southern Metropolitan`,
+                   `Regiao)South-Eastern Metropolitan`, 
+                   `Regiao)Southern Metropolitan`,
                    `Regiao)Western Metropolitan`, `Regiao)Western Victoria`))
 dplyr::glimpse(df_aux)
 
@@ -657,7 +663,8 @@ df_dup <- df %>%
                 Lat_long_orig = paste(Lat_orig, Long_orig),
                 Lat_long_pos  = paste(round(Latitude, 4), round(Longitude, 4)),
                 check   = ifelse(Lat_long_orig == Lat_long_pos, "check", "ok"),
-                Pres_NA = ifelse(is.na(Latitude) | is.na(Longitude), "duplicada", "ponto_nao_duplicado")) %>% 
+                Pres_NA = ifelse(is.na(Latitude) | is.na(Longitude), 
+                                 "duplicada", "ponto_nao_duplicado")) %>% 
   dplyr::mutate(check = as.factor(check)) %>% 
   na.omit() %>% 
   dplyr::select(id, check, Pres_NA)
@@ -686,7 +693,7 @@ df_model <- df_aux %>%
 rm(df_num)
 
 # CLUSTERING
-# ESTIMATVA DO NUMERO OTIMO DE CLUSTERS
+# ESTIMATVA DO NUMERO OTIMO DE CLUSTERS A PARTIR DA VARIANCIA INTERNA
 {
   set.seed(1)
   # NUMERO MAXIMO DE CLUSTERS
@@ -735,9 +742,11 @@ df_aux_cluster %>%
 # MAPA DE LOCALIZACAO IMOVEIS
 ggmap::qmplot(Longitude, Latitude, data = df_aux_cluster, geom = "blank",
               maptype = "toner-background", darken = 0.7, legend = "topleft") +
-  stat_density_2d(aes(fill = ..level..), geom = "polygon", alpha = .1, color = NA) +
+  stat_density_2d(aes(fill = ..level..), 
+                  geom = "polygon", alpha = .1, color = NA) +
   scale_fill_gradient2("Imóveis", 
-                       low = "white", mid = "yellow", high = "red", midpoint = 13)
+                       low = "white", mid = "yellow", high = "red", 
+                       midpoint = 13)
 
 df_aux_cluster %>% 
   ggplot() +
@@ -762,7 +771,7 @@ plot_out <- df_aux_cluster %>%
   xlab("Longitude") + ylab("Latitude") +
   theme_bw()
 plot_out
-plotly::ggplotly(plot_out)
+plotly::ggplotly(plot_out) # GRAFICO INTERATIVO
 
 df_aux_cluster %>% 
   ggplot() +
@@ -780,11 +789,13 @@ df_aux_cluster %>%
 # A LOCALIZACAO TENHA FORTE INFLUENCIA NO PRECO, CONTUDO E OBSERVADO QUE 
 # EXISTEM PONTOS QUE SE DISTANCIAM DA MASSA DE DADOS, CLUSTER. 
 
+
 p_out <- df_aux_cluster %>% 
   dplyr::mutate(out = ifelse(df_aux$Latitude == -37.45392, "out", "ok")) %>% 
   ggplot(aes(x = Longitude, y = Latitude)) +
   geom_point(aes(alpha = out), 
-             shape = 21, size = 5, stroke = 1, col = "black", show.legend = F) +
+             shape = 21, size = 5, stroke = 1, 
+             col = "black", show.legend = F) +
   geom_point(aes(col = Preco, shape = cluster)) +
   facet_wrap(~cluster) +
   scale_color_gradient(low = "blue", high = "red", name = "Preço") +
@@ -794,8 +805,11 @@ p_out <- df_aux_cluster %>%
   labs(subtitle = "Clusters") +
   theme_bw()
 
+# LOCALIZACAO DO OUTLIER, VERIFICADA A PARTIR DO GRAFICO INTERATIVO
 ann_text <- data.frame(Latitude = -37.5, Longitude = 144.59, lab = "Outlier",
-                       cluster = factor(6, levels = c("1", "2", "3", "4", "5", "6")))
+                       cluster = factor(6, 
+                                        levels = c("1", "2", "3", 
+                                                   "4", "5", "6")))
 p_out + 
   geom_text(data = ann_text, label = "Outlier")
 
@@ -811,20 +825,23 @@ df_aux_cluster %>%
 # PREDICAO DE PRECOS ----
 df_model <- df_aux %>% 
   dplyr::mutate_if(is.factor, as.numeric) %>% # AJUSTE PARA EMPREGO DOS MODELOS
-  dplyr::filter(Latitude != -37.45392 & Longitude != 144.5886) # OUTLIERS
+  dplyr::filter(Latitude != -37.45392 & Longitude != 144.5886) # OUTLIERS 
+# OUTLIERS BASEADO NA GEOLOCALIZACAO
+
 
 # OS MODELOS PREDITIVOS EMPREGADOS SERAO MODELOS BASEADOS EM ARVORES DE DECISAO,
-# DEVIDO A ROBUSTEZ E ALTA CAPACIDADE DE PREDICAO. OS ALGORITMOS TESTADOS SAO: 
-# RANDOM FOREST, 
+# DEVIDO A ROBUSTEZ, ALTA CAPACIDADE DE PREDICAO E O TIPO DE DADO (CATEGORICO E
+# CONTINUO). OS ALGORITMOS TESTADOS SAO: 
+# RANDOM FOREST, xgbTree E xgbLinear.
+# OS DOIS ULTIMOS ALGORITMOS SAO DERIVADOS DO XGBOOST.
 
 # SET DE TREINAMENTO E VALIDACAO
 # 75% DOS DADOS SERAO UTILIZADOS NO TREINAMENTO
 # 25% NA FASE DE TESTE
+
 {
   set.seed (1) 
-  index <- caret::createDataPartition(df_model$Preco, 
-                                      p = 0.75,       
-                                      list = FALSE) 
+  index <- caret::createDataPartition(df_model$Preco, p = 0.75, list = FALSE) 
   
   train <- df_model[index, ]
   test  <- df_model[-index, ]
@@ -844,6 +861,9 @@ df_model <- df_aux %>%
   
 }
 
+# PARA O MODELO DE REGRESSAO, SERAO ANALISADAS AS METRIAS DE RMSE (ERRO 
+# QUADRATICO MEDIO), MAE (ERRO MEDIO ABSOLUTO) E Rˆ2 (FIT MODEL).
+
 model_listF$rf
 model_listF$xgbTree
 model_listF$xgbLinear
@@ -859,9 +879,9 @@ dotplot(resamplesF, metric = "RMSE")
 
 # PODEMOS VISUALIZAR NO GRAFICO QUE O MODELO BASEADO NO ALGORITMO DE RANDOM 
 # FOREST NOS RETORNA A MELHOR PERFORMANCE.
-
 # COMO ESTAMOS REALIZANDO UMA REGRECAO, Preco E UMA VARIAVEL CONTINUA, NAO TEMOS
 # A MATRIZ DE CONFUSAO, QUE E GERADA EM PROBLEMAS DE CLASIFICACAO.
+
 
 # ANALISE DE PERFORMANCE DO MODELO
 predF <- caretEnsemble::caretEnsemble(model_listF)
@@ -870,38 +890,55 @@ final_model_stack <- caret::postResample(predict(predF, test),
 
 dotplot(final_model_stack, metric = "RMSE")
 
+# APESAR DOS EXCELENTES VALORES, VALE A RESSALVA DA NECESSIDADE DE TRANSFORMACAO
+# DE VOLTA (BACK TRANSFORMAITON), DADO A TRANSFORMACAO log10(Preco).
 
-# APESAR DA BOA PERFORMANCE DO MODELO, NAO PODEMOS, AINDA, SACRAMENTAR AS 
-# METRICAS FINAIS DEVIDO A A TRANSFORMACAO log10(). OU SEJA, E NECESSARIO
-# FAZER O PASSO CONTRARIO AO MODELO, O "BACK".
+# O MODELO STACK (EMPILHAMENTO / SUPERLEARNING) APRESENTA EXCELENTE PERFORMANCE, 
+# MAS ALTO CUSTO COMPUTACIONAL.
 
-# CONTUDO, PARA O BACK E REMOCAO DE VARIAVEIS, UTILIZAREMOS APENAS O ALGORITMO
-# DE RANDOM FOREST, POIS E ESPERADO QUE O ERRO DOS PROXIMOS MODELOS SIGAM
-# A MESMA TENDENCIA.
+# LOGO, O MODELO ESCOLHIDO PARA A REGRESSAO DOS PRECOS DOS IMOVEIS NA CIDADE
+# DE MELBOURNE E O MODELO UTILIZANDO RANDOM FOREST.
 
-# MODELO PREDITIVO FINAL ----
-# UTILIZANDO APENAS O MODELO RANDOM FOREST
+# PLOT COM O ANTILOG DOS VALORES
+plot(10^(predict(model_listF$rf, newdata = test)), 10^(test$Preco))
 
-{
-  set.seed (1) 
-  index <- caret::createDataPartition(df_model$Preco, p = 0.75, list = FALSE) 
-  
-  train <- teste[index, ]
-  test  <- teste[-index, ]
-  
-  ctrl  <- caret::trainControl(method  = "cv", 
-                               number  = 10,
-                               savePredictions = T,
-                               verboseIter = FALSE)
-  
-  model1_orig_rf <- caret::train(Preco ~ .,
-                                 data   = train,
-                                 method = "rf",
-                                 preProcess = c("scale", "center"),
-                                 trControl  = ctrl)
-}
+# PLOT DE RESIDUO - MODELO RANDOM FORESTE
+plot(10^(test$Preco) - 10^(predict(model_listF$rf, newdata = test)))
 
-# CONCLUSAO ----
+# E POSSIVEL NOTAR QUE O MODELO APRESENTA BOA TENDENCIA DOS VALORES A SEREM
+# PREDITOS. UM BOM VALOR DE Rˆ2. 
+# APARENTEMENTE TEMOS ALGUNS OUTROS OUTLIERS, CONTUDO NA INFLUENCIAM TAO NEGA-
+# TIVAMENTE A TENDENCIA DO MODELO/RESIDUO.
+
+# PERFORMANCE - MODELO RANDOM FOREST - COM O ANTILOG
+caret::postResample(10^(predict(model_listF$rf, newdata = test)),
+                    obs  = 10^test$Preco)
+
+
+# COM OS DADOS EM ESCALA REAL, PERCEBEMOS QUE O VALOR DO RMSE PODE SER CONSI-
+# DERADO ALTO. POREM, O MODELO CONTINUA SENDO BEM REPRESENTATIVO, COM BOA 
+# TENDENCIA, VIES. A REDUCAO DO RMSE PODE SER FEITA ATRAVES DE SELESSAO DE 
+# VARIAVEIS, COMO O AUXILIO DO MODELO LASSO DE REGRESSAO, OU UM STEPWISE, PRIN-
+# CIPALPENTE EM RAZAO DA ELEVADA QUANTIDADE DE NA'S PREENCHIDA.
+
+# PARA IMPLEMENTACAO EM PRODUCAO DESTE MODELO, SUGIRO QUE SEJA UTILIZADO APEMAS
+# O PACOTE caret PARA CONFIGURAR A RANDOM FOREST, POIS JA SABEMOS QUE TEREMOS 
+# BONS RESULTADOS, TEM MELHOR PERFORMANCE QUE OS DERIVADOS DE XGBOOST AQUI
+# TREINADOS, E MENOS COMPLEXO E POSSUI MENOR CUSTO COMPUTACIONAL, DADO A AUSEN-
+# DO BOOST E DO GRADIENTE.
+
+# APESAR DA EXTENSIVA ANALISE EXPLORATORIA, INCLUSIVE COM METODO NAO SUPERVISIO-
+# NADO, NAO FOI POSSIVEL VERIFICAR DE MANEIRA NITIDA UM PADRAO DE Preco. COMO
+# SUGESTAO, APESAR DO GRANDE CUSTO COMPUTACIONAL E AUMENTO DA COMPLEXIDADE DOS
+# MODELOS GERADOS, TEM-SE A FUTURA POSSIBILIDADE DE EMPREGO DE METODO HIBRIDO,
+# COMO O RF + IDW, PRINCIPALMENTE PELA POSSIBILIDADE DE MODELO INCREMENTAL DADO
+# OS RESIDUOS DO MODELO PREDITOR.
+
+# A NIVEL DE SUGESTAO EMPRESARIAL, CASO DESEJADO IMPLEMENTAR ALGO COM 
+# CLASSIFICACAO, ENTENDER QUANDO UM Metodo "VB" PODE SER INTERESSANTE OU
+# NAO PODE SER IDEALIZADO COMO ETAPA DE PLANEJAMENTO FINANCEIRO.
+
 
 
 # BRENNER BIASI SOUZA SILVA
+
