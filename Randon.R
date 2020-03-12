@@ -941,4 +941,6 @@ caret::postResample(10^(predict(model_listF$rf, newdata = test)),
 
 
 # BRENNER BIASI SOUZA SILVA
+# ESTE ARQUIVO TAMBEM ESTA DISPONIVEL EM:
+# https://github.com/bbiasi/randon
 
